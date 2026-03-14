@@ -95,7 +95,11 @@ export class MemoryService {
     return memory;
   }
 
-  private async saveCandidate(event: RawEvent, candidate: CandidateMemory): Promise<void> {
+  async promoteCandidate(event: RawEvent, candidate: CandidateMemory): Promise<MemoryRecord> {
+    return this.saveCandidate(event, candidate);
+  }
+
+  private async saveCandidate(event: RawEvent, candidate: CandidateMemory): Promise<MemoryRecord> {
     const duplicate = await this.memories.findDuplicate({
       tenantId: candidate.tenantId,
       scopes: candidate.scopes,
@@ -114,7 +118,7 @@ export class MemoryService {
       duplicate.updatedAt = new Date().toISOString();
       duplicate.embedding = await this.embeddings.embed(`${duplicate.title}\n${duplicate.content}`);
       await this.memories.update(duplicate);
-      return;
+      return duplicate;
     }
 
     const now = new Date().toISOString();
@@ -140,6 +144,7 @@ export class MemoryService {
     };
 
     await this.memories.save(record);
+    return record;
   }
 
   private buildSource(event: RawEvent): MemorySource {

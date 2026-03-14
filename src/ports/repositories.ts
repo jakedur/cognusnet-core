@@ -12,6 +12,7 @@ export interface ApiKeyRepository {
 }
 
 export interface RawEventRepository {
+  findById(id: string): Promise<RawEvent | null>;
   findByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<RawEvent | null>;
   save(event: RawEvent): Promise<void>;
 }
@@ -32,6 +33,7 @@ export interface MemoryRepository {
 export interface ReviewQueueRepository {
   enqueue(item: ReviewItem): Promise<void>;
   listPending(tenantId?: string): Promise<ReviewItem[]>;
+  findById(id: string): Promise<ReviewItem | null>;
   update(item: ReviewItem): Promise<void>;
 }
 

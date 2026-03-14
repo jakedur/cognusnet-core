@@ -1,13 +1,20 @@
 import Fastify from "fastify";
 import { z } from "zod";
 
-import type { FeedbackRequest, RetrieveMemoryRequest, WriteMemoryRequest } from "./domain/types";
+import type {
+  FeedbackRequest,
+  RetrieveMemoryRequest,
+  ReviewDecisionRequest,
+  ReviewListRequest,
+  WriteMemoryRequest
+} from "./domain/types";
 import { AuthService } from "./modules/auth/service";
 import { AuditService } from "./modules/audit/service";
 import { DeterministicEmbeddingProvider, type EmbeddingProvider } from "./modules/embeddings/provider";
 import { EventService } from "./modules/events/service";
 import { ExtractionService } from "./modules/extraction/service";
 import { MemoryService } from "./modules/memory/service";
+import { ReviewService } from "./modules/review/service";
 import { RetrievalService } from "./modules/retrieval/service";
 import { ScopeResolver } from "./modules/tenancy/scope";
 import type { Repositories } from "./ports/repositories";
@@ -92,6 +99,20 @@ const feedbackSchema = z
     path: ["content"]
   });
 
+const reviewDecisionSchema = z
+  .object({
+    tenantId: z.string().min(1),
+    actorId: z.string().min(1),
+    scopes: scopeSchema,
+    reviewId: z.string().min(1),
+    action: z.enum(["accept", "reject", "edit_and_accept"]),
+    content: z.string().min(1).optional()
+  })
+  .refine((input) => input.action !== "edit_and_accept" || Boolean(input.content), {
+    message: "Content is required when action is edit_and_accept",
+    path: ["content"]
+  });
+
 export function createApp(input: { repositories: Repositories; embeddingProvider?: EmbeddingProvider }) {
   const app = Fastify({ logger: false });
   const embeddings = input.embeddingProvider ?? new DeterministicEmbeddingProvider();
@@ -101,6 +122,7 @@ export function createApp(input: { repositories: Repositories; embeddingProvider
   const memoryService = new MemoryService(input.repositories.memories, input.repositories.reviews, embeddings, scopeResolver);
   const retrieval = new RetrievalService(input.repositories.memories, embeddings, audits, scopeResolver);
   const events = new EventService(input.repositories.rawEvents, new ExtractionService(), memoryService, audits, scopeResolver);
+  const reviews = new ReviewService(input.repositories.reviews, input.repositories.rawEvents, memoryService, audits, scopeResolver);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -143,6 +165,49 @@ export function createApp(input: { repositories: Repositories; embeddingProvider
         memory,
         auditReference: `${body.tenantId}:${body.memoryId}:${body.action}`
       });
+    } catch (error) {
+      return handleError(reply, error);
+    }
+  });
+
+  app.get("/v1/review/items", async (request, reply) => {
+    try {
+      const query = z
+        .object({
+          tenantId: z.string().min(1),
+          actorId: z.string().min(1),
+          workspaceId: z.string().min(1).optional(),
+          projectId: z.string().min(1).optional(),
+          repositoryId: z.string().min(1).optional(),
+          userPrivateId: z.string().min(1).optional()
+        })
+        .parse(request.query);
+      const body: ReviewListRequest = {
+        tenantId: query.tenantId,
+        actorId: query.actorId,
+        scopes: {
+          workspaceId: query.workspaceId,
+          projectId: query.projectId,
+          repositoryId: query.repositoryId,
+          userPrivateId: query.userPrivateId
+        }
+      };
+      await auth.authenticate(request.headers["x-api-key"] as string | undefined, body.tenantId);
+      return reply.send(await reviews.list(body));
+    } catch (error) {
+      return handleError(reply, error);
+    }
+  });
+
+  app.post("/v1/review/items/:reviewId/decision", async (request, reply) => {
+    try {
+      const params = z.object({ reviewId: z.string().min(1) }).parse(request.params);
+      const body = reviewDecisionSchema.parse({
+        ...(request.body as Record<string, unknown>),
+        reviewId: params.reviewId
+      }) as ReviewDecisionRequest;
+      await auth.authenticate(request.headers["x-api-key"] as string | undefined, body.tenantId);
+      return reply.send(await reviews.decide(body));
     } catch (error) {
       return handleError(reply, error);
     }

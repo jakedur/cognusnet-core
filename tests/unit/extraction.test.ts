@@ -52,4 +52,33 @@ describe("ExtractionService", () => {
     expect(candidates[0]?.type).toBe("conversation_summary");
     expect(candidates[0]?.confidence).toBeLessThan(0.8);
   });
+
+  it("queues prompt responses as low-confidence summaries unless they are explicit durable facts", () => {
+    const event: RawEvent = {
+      id: "event-3",
+      tenantId: "tenant-alpha",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+      actorId: "actor-1",
+      artifactType: "prompt_response",
+      artifactPayload: {
+        query: "Where is the auth middleware?",
+        answer: "It lives in api/server.ts."
+      },
+      normalizedText: JSON.stringify({
+        query: "Where is the auth middleware?",
+        answer: "It lives in api/server.ts."
+      }),
+      provenance: {
+        sourceKind: "prompt_response",
+        sourceLabel: "Control plane",
+        actorId: "actor-1",
+        capturedAt: new Date().toISOString()
+      },
+      createdAt: new Date().toISOString()
+    };
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates[0]?.type).toBe("conversation_summary");
+    expect(candidates[0]?.confidence).toBeLessThan(0.8);
+  });
 });

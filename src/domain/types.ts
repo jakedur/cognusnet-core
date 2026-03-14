@@ -17,6 +17,7 @@ export type ArtifactType =
 
 export type FeedbackAction = "keep" | "edit" | "forget" | "pin" | "mark_stale";
 export type ReviewStatus = "pending" | "accepted" | "rejected";
+export type ReviewDecisionAction = "accept" | "reject" | "edit_and_accept";
 export type ApiKeyRole = "tenant_admin" | "service";
 
 export interface Scope {
@@ -180,4 +181,28 @@ export interface FeedbackRequest {
   memoryId: string;
   action: FeedbackAction;
   content?: string;
+}
+
+export interface ReviewListRequest {
+  tenantId: string;
+  actorId: string;
+  scopes: Scope;
+}
+
+export interface ReviewListResponse {
+  reviewItems: ReviewItem[];
+}
+
+export interface ReviewDecisionRequest {
+  tenantId: string;
+  actorId: string;
+  scopes: Scope;
+  reviewId: string;
+  action: ReviewDecisionAction;
+  content?: string;
+}
+
+export interface ReviewDecisionResponse {
+  reviewItem: ReviewItem;
+  promotedMemoryId?: string;
 }

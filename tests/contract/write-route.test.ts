@@ -78,4 +78,36 @@ describe("POST /v1/memory/write", () => {
     expect(second.json().extractionStatus).toBe("duplicate");
     expect(testContext.store.snapshot().rawEvents).toHaveLength(1);
   });
+
+  it("accepts an optional repository-relative path for coding writes", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const response = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: ".\\src\\api\\server.ts" },
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query: "Where is the auth middleware?",
+          answer: "It lives in src/api/server.ts."
+        },
+        provenance: {
+          sourceKind: "prompt_response",
+          sourceLabel: "Coding session",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        },
+        idempotencyKey: "event-path-1"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(testContext.store.snapshot().rawEvents[0]?.scopes.path).toBe("src/api/server.ts");
+    expect(testContext.store.snapshot().memories[0]?.scopes.path).toBe("src/api/server.ts");
+  });
 });

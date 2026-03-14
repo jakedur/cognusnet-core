@@ -68,12 +68,16 @@ export class InMemoryStore implements Repositories {
       scopes: Scope;
       type: MemoryRecord["type"];
       title: string;
+      mergeKey?: string;
     }): Promise<MemoryRecord | null> => {
       for (const memory of this.memoryRows.values()) {
         if (
           memory.tenantId === input.tenantId &&
           memory.type === input.type &&
-          memory.title === input.title &&
+          (
+            (input.mergeKey && memory.attributes.mergeKey === input.mergeKey) ||
+            (!input.mergeKey && memory.title === input.title)
+          ) &&
           this.scopeResolver.scopeKey(memory.scopes) === this.scopeResolver.scopeKey(input.scopes)
         ) {
           return clone(memory);

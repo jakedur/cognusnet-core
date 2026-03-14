@@ -24,6 +24,7 @@ const scopeSchema = z
     workspaceId: z.string().min(1).optional(),
     projectId: z.string().min(1).optional(),
     repositoryId: z.string().min(1).optional(),
+    path: z.string().min(1).optional(),
     userPrivateId: z.string().min(1).optional()
   })
   .refine((scope) => Boolean(scope.workspaceId || scope.projectId || scope.repositoryId || scope.userPrivateId), {
@@ -179,18 +180,20 @@ export function createApp(input: { repositories: Repositories; embeddingProvider
           workspaceId: z.string().min(1).optional(),
           projectId: z.string().min(1).optional(),
           repositoryId: z.string().min(1).optional(),
+          path: z.string().min(1).optional(),
           userPrivateId: z.string().min(1).optional()
         })
         .parse(request.query);
       const body: ReviewListRequest = {
         tenantId: query.tenantId,
         actorId: query.actorId,
-        scopes: {
-          workspaceId: query.workspaceId,
-          projectId: query.projectId,
-          repositoryId: query.repositoryId,
-          userPrivateId: query.userPrivateId
-        }
+          scopes: {
+            workspaceId: query.workspaceId,
+            projectId: query.projectId,
+            repositoryId: query.repositoryId,
+            path: query.path,
+            userPrivateId: query.userPrivateId
+          }
       };
       await auth.authenticate(request.headers["x-api-key"] as string | undefined, body.tenantId);
       return reply.send(await reviews.list(body));

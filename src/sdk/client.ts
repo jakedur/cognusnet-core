@@ -1,5 +1,8 @@
 import type {
+  CodingOutcomeArtifact,
   FeedbackRequest,
+  PrepareCodingContextInput,
+  RecordCodingOutcomeInput,
   ReviewDecisionRequest,
   ReviewDecisionResponse,
   ReviewListRequest,
@@ -27,8 +30,34 @@ export class CognusNetClient {
     return this.post<RetrieveMemoryResponse>("/v1/memory/retrieve", request);
   }
 
+  async prepareCodingContext(request: PrepareCodingContextInput): Promise<RetrieveMemoryResponse> {
+    return this.retrieveMemory({
+      ...request,
+      interactionMode: "coding"
+    });
+  }
+
   async writeMemoryEvent(request: WriteMemoryRequest): Promise<WriteMemoryResponse> {
     return this.post<WriteMemoryResponse>("/v1/memory/write", request);
+  }
+
+  async recordCodingOutcome(input: RecordCodingOutcomeInput): Promise<WriteMemoryResponse> {
+    const artifact = this.toWriteArtifact(input.artifact);
+    return this.writeMemoryEvent({
+      tenantId: input.tenantId,
+      actorId: input.actorId,
+      scopes: input.scopes,
+      artifactType: artifact.artifactType,
+      artifactPayload: artifact.artifactPayload,
+      provenance: {
+        sourceKind: artifact.artifactType,
+        sourceLabel: artifact.sourceLabel,
+        sourceUri: artifact.sourceUri,
+        actorId: input.actorId,
+        capturedAt: input.capturedAt ?? new Date().toISOString()
+      },
+      idempotencyKey: input.idempotencyKey
+    });
   }
 
   async submitMemoryFeedback(request: FeedbackRequest): Promise<{ memory: unknown; auditReference: string }> {
@@ -82,5 +111,33 @@ export class CognusNetClient {
     }
 
     return (await response.json()) as T;
+  }
+
+  private toWriteArtifact(input: CodingOutcomeArtifact): {
+    artifactType: WriteMemoryRequest["artifactType"];
+    artifactPayload: unknown;
+    sourceLabel: string;
+    sourceUri?: string;
+  } {
+    if (input.artifactType === "prompt_response") {
+      return {
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query: input.query,
+          answer: input.answer
+        },
+        sourceLabel: input.sourceLabel ?? "Coding outcome",
+        sourceUri: input.sourceUri
+      };
+    }
+
+    return {
+      artifactType: input.artifactType,
+      artifactPayload: input.content,
+      sourceLabel:
+        input.sourceLabel ??
+        (input.artifactType === "documentation" ? "Coding documentation" : "Coding artifact"),
+      sourceUri: input.sourceUri
+    };
   }
 }

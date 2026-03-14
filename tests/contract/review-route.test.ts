@@ -22,13 +22,10 @@ describe("review routes", () => {
         tenantId: testContext.tenantId,
         actorId: testContext.actorId,
         scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
-        artifactType: "prompt_response",
-        artifactPayload: {
-          query: "Where is the auth middleware?",
-          answer: "It lives in api/server.ts."
-        },
+        artifactType: "conversation",
+        artifactPayload: "We talked about how auth might work in the server layer.",
         provenance: {
-          sourceKind: "prompt_response",
+          sourceKind: "conversation",
           sourceLabel: "Control plane",
           actorId: testContext.actorId,
           capturedAt: new Date().toISOString()
@@ -59,13 +56,10 @@ describe("review routes", () => {
         tenantId: testContext.tenantId,
         actorId: testContext.actorId,
         scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
-        artifactType: "prompt_response",
-        artifactPayload: {
-          query: "Where is the auth middleware?",
-          answer: "It lives in api/server.ts."
-        },
+        artifactType: "conversation",
+        artifactPayload: "We talked about how auth might work in the server layer.",
         provenance: {
-          sourceKind: "prompt_response",
+          sourceKind: "conversation",
           sourceLabel: "Control plane",
           actorId: testContext.actorId,
           capturedAt: new Date().toISOString()

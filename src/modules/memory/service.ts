@@ -18,15 +18,21 @@ export class MemoryService {
     let queuedCount = 0;
 
     for (const candidate of candidates) {
-      const shouldReview = candidate.confidence < 0.8 || this.scopeResolver.scopeKey(candidate.scopes) === this.scopeResolver.scopeKey({});
+      const normalizedCandidate: CandidateMemory = {
+        ...candidate,
+        scopes: this.scopeResolver.normalizeScope(candidate.scopes)
+      };
+      const shouldReview =
+        normalizedCandidate.confidence < 0.8 ||
+        this.scopeResolver.scopeKey(normalizedCandidate.scopes) === this.scopeResolver.scopeKey({});
       if (shouldReview) {
         await this.reviews.enqueue({
           id: randomUUID(),
-          tenantId: candidate.tenantId,
-          scopes: candidate.scopes,
+          tenantId: normalizedCandidate.tenantId,
+          scopes: normalizedCandidate.scopes,
           eventId: event.id,
-          candidate,
-          reason: candidate.confidence < 0.8 ? "low_confidence" : "broad_scope",
+          candidate: normalizedCandidate,
+          reason: normalizedCandidate.confidence < 0.8 ? "low_confidence" : "broad_scope",
           status: "pending",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -35,7 +41,7 @@ export class MemoryService {
         continue;
       }
 
-      await this.saveCandidate(event, candidate);
+      await this.saveCandidate(event, normalizedCandidate);
       acceptedCount += 1;
     }
 
@@ -58,7 +64,8 @@ export class MemoryService {
       throw new Error("Forbidden: feedback target is outside the authenticated tenant");
     }
 
-    if (this.scopeResolver.scopeKey(memory.scopes) !== this.scopeResolver.scopeKey(input.scopes)) {
+    const normalizedScope = this.scopeResolver.normalizeScope(input.scopes);
+    if (this.scopeResolver.scopeKey(memory.scopes) !== this.scopeResolver.scopeKey(normalizedScope)) {
       throw new Error("Forbidden: feedback target is outside the requested scope");
     }
 
@@ -100,15 +107,18 @@ export class MemoryService {
   }
 
   private async saveCandidate(event: RawEvent, candidate: CandidateMemory): Promise<MemoryRecord> {
+    const mergeKey = typeof candidate.attributes.mergeKey === "string" ? candidate.attributes.mergeKey : undefined;
     const duplicate = await this.memories.findDuplicate({
       tenantId: candidate.tenantId,
       scopes: candidate.scopes,
       type: candidate.type,
-      title: candidate.title
+      title: candidate.title,
+      mergeKey
     });
 
     const source = this.buildSource(event);
     if (duplicate) {
+      duplicate.title = candidate.title;
       duplicate.content = candidate.content;
       duplicate.attributes = { ...duplicate.attributes, ...candidate.attributes };
       duplicate.confidence = Math.max(duplicate.confidence, candidate.confidence);

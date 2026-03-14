@@ -12,7 +12,7 @@ interface LiveClientConfig {
 }
 
 interface ParsedCommand {
-  command: "write" | "retrieve" | "feedback" | "ask" | "help";
+  command: "write" | "retrieve" | "feedback" | "ask" | "prepare_coding_context" | "record_coding_outcome" | "help";
   flags: Record<string, string>;
   values: string[];
 }
@@ -44,7 +44,14 @@ function parseArgs(argv: string[]): ParsedCommand {
     values.push(token);
   }
 
-  if (rawCommand === "write" || rawCommand === "retrieve" || rawCommand === "feedback" || rawCommand === "ask") {
+  if (
+    rawCommand === "write" ||
+    rawCommand === "retrieve" ||
+    rawCommand === "feedback" ||
+    rawCommand === "ask" ||
+    rawCommand === "prepare_coding_context" ||
+    rawCommand === "record_coding_outcome"
+  ) {
     return { command: rawCommand, flags, values };
   }
 
@@ -74,11 +81,14 @@ function usage(): string {
     "  npm run client -- write --type conversation --text \"Decision: auth middleware lives in api/server.ts\"",
     "  npm run client -- feedback --memory-id <id> --action pin",
     "  npm run client -- ask --query \"Where is the auth middleware?\" --answer \"It lives in api/server.ts\"",
+    "  npm run client -- prepare_coding_context --query \"Where is the auth middleware?\" --path src/api/server.ts",
+    "  npm run client -- record_coding_outcome --type prompt_response --query \"Where is the auth middleware?\" --answer \"It lives in src/api/server.ts.\" --path src/api/server.ts",
     "",
     "Optional flags:",
     "  --workspace-id <id>",
     "  --project-id <id>",
-    "  --repository-id <id>"
+    "  --repository-id <id>",
+    "  --path <repository-relative-path>"
   ].join("\n");
 }
 
@@ -87,6 +97,7 @@ function resolveScopes(config: LiveClientConfig, flags: Record<string, string>):
     workspaceId: flags["workspace-id"] ?? config.scopes.workspaceId,
     projectId: flags["project-id"] ?? config.scopes.projectId,
     repositoryId: flags["repository-id"] ?? config.scopes.repositoryId,
+    path: flags.path ?? undefined,
     userPrivateId: flags["user-private-id"] ?? undefined
   };
 }
@@ -121,6 +132,22 @@ export async function runLiveClient(
       scopes,
       query,
       interactionMode: "coding"
+    });
+
+    return JSON.stringify(response, null, 2);
+  }
+
+  if (parsed.command === "prepare_coding_context") {
+    const query = parsed.flags.query ?? parsed.values.join(" ");
+    if (!query) {
+      throw new Error("prepare_coding_context requires --query");
+    }
+
+    const response = await client.prepareCodingContext({
+      tenantId: config.tenantId,
+      actorId: config.actorId,
+      scopes,
+      query
     });
 
     return JSON.stringify(response, null, 2);
@@ -167,6 +194,35 @@ export async function runLiveClient(
       action,
       content: parsed.flags.content
     });
+
+    return JSON.stringify(response, null, 2);
+  }
+
+  if (parsed.command === "record_coding_outcome") {
+    const artifactType = (parsed.flags.type ?? "prompt_response") as "prompt_response" | "code_snippet" | "code_diff" | "documentation";
+    const response =
+      artifactType === "prompt_response"
+        ? await client.recordCodingOutcome({
+            tenantId: config.tenantId,
+            actorId: config.actorId,
+            scopes,
+            artifact: {
+              artifactType,
+              query: parsed.flags.query ?? "",
+              answer: parsed.flags.answer ?? ""
+            },
+            idempotencyKey: parsed.flags["idempotency-key"] ?? `live-client-coding-${randomUUID()}`
+          })
+        : await client.recordCodingOutcome({
+            tenantId: config.tenantId,
+            actorId: config.actorId,
+            scopes,
+            artifact: {
+              artifactType,
+              content: parsed.flags.content ?? parsed.flags.text ?? parsed.values.join(" ")
+            },
+            idempotencyKey: parsed.flags["idempotency-key"] ?? `live-client-coding-${randomUUID()}`
+          });
 
     return JSON.stringify(response, null, 2);
   }

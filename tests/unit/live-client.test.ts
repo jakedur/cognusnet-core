@@ -22,7 +22,8 @@ describe("runLiveClient", () => {
         trace: {
           candidateCount: 0,
           selectedCount: 0,
-          queryEmbeddingDimensions: 12
+          queryEmbeddingDimensions: 12,
+          selectedMatches: []
         }
       })
     });

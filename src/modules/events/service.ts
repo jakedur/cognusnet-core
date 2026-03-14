@@ -17,7 +17,8 @@ export class EventService {
   ) {}
 
   async ingest(request: WriteMemoryRequest, actor: AuthenticatedActor): Promise<WriteMemoryResponse> {
-    this.scopeResolver.ensureScoped(request.scopes);
+    const normalizedScopes = this.scopeResolver.normalizeScope(request.scopes);
+    this.scopeResolver.ensureScoped(normalizedScopes);
 
     if (request.idempotencyKey) {
       const existing = await this.rawEvents.findByIdempotencyKey(request.tenantId, request.idempotencyKey);
@@ -34,7 +35,7 @@ export class EventService {
     const event: RawEvent = {
       id: randomUUID(),
       tenantId: request.tenantId,
-      scopes: request.scopes,
+      scopes: normalizedScopes,
       actorId: request.actorId,
       artifactType: request.artifactType,
       artifactPayload: request.artifactPayload,

@@ -21,12 +21,13 @@ export interface MemoryRepository {
   save(memory: MemoryRecord): Promise<void>;
   update(memory: MemoryRecord): Promise<void>;
   findById(id: string): Promise<MemoryRecord | null>;
-  listByTenant(tenantId: string): Promise<MemoryRecord[]>;
+    listByTenant(tenantId: string): Promise<MemoryRecord[]>;
   findDuplicate(input: {
     tenantId: string;
     scopes: Scope;
     type: MemoryRecord["type"];
     title: string;
+    mergeKey?: string;
   }): Promise<MemoryRecord | null>;
 }
 

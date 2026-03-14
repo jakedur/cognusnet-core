@@ -6,13 +6,17 @@ export type {
   AuditLogEntry,
   AuthenticatedActor,
   CandidateMemory,
+  CodingArtifactType,
+  CodingOutcomeArtifact,
   FeedbackAction,
   FeedbackRequest,
   MemoryRecord,
   MemorySource,
   MemoryType,
+  PrepareCodingContextInput,
   Provenance,
   RawEvent,
+  RecordCodingOutcomeInput,
   ReviewDecisionAction,
   ReviewDecisionRequest,
   ReviewDecisionResponse,
@@ -29,5 +33,6 @@ export type {
 } from "../domain/types";
 export { PostgresRepositories } from "../infra/postgres/repositories";
 export { CognusNetClient, type CognusNetClientOptions } from "../sdk/client";
+export { CodingMcpAdapter, type CodingMcpDefaults, type CodingMcpToolDefinition } from "../mcp/coding";
 export { coreManifest, type CoreManifest } from "./manifest";
 export type { Repositories } from "../ports/repositories";

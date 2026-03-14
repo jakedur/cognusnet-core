@@ -1,0 +1,81 @@
+import { afterEach, describe, expect, it } from "vitest";
+
+import { createTestContext } from "../helpers/test-context";
+
+describe("POST /v1/memory/write", () => {
+  let app: { close: () => Promise<void> } | undefined;
+
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it("writes an event and promotes high confidence memories", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const response = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: {
+        "x-api-key": testContext.apiKey
+      },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+        artifactType: "conversation",
+        artifactPayload: "Decision: auth middleware lives in api/server.ts",
+        provenance: {
+          sourceKind: "conversation",
+          sourceLabel: "Design sync",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        },
+        idempotencyKey: "event-1"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.acceptedCount).toBe(1);
+    expect(body.queuedCount).toBe(0);
+    expect(testContext.store.snapshot().memories).toHaveLength(1);
+  });
+
+  it("deduplicates writes by idempotency key", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+    const payload = {
+      tenantId: testContext.tenantId,
+      actorId: testContext.actorId,
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+      artifactType: "conversation",
+      artifactPayload: "Decision: use pgvector for embeddings",
+      provenance: {
+        sourceKind: "conversation",
+        sourceLabel: "Architecture review",
+        actorId: testContext.actorId,
+        capturedAt: new Date().toISOString()
+      },
+      idempotencyKey: "event-2"
+    };
+
+    const first = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload
+    });
+    const second = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload
+    });
+
+    expect(first.json().extractionStatus).toBe("processed");
+    expect(second.json().extractionStatus).toBe("duplicate");
+    expect(testContext.store.snapshot().rawEvents).toHaveLength(1);
+  });
+});

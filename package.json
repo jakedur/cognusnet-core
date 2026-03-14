@@ -2,7 +2,15 @@
   "name": "cognusnet-core",
   "version": "0.1.0",
   "description": "Open source CognusNet core runtime for shared AI memory",
-  "main": "dist/src/index.js",
+  "main": "dist/src/public/index.js",
+  "types": "dist/src/public/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/public/index.d.ts",
+      "require": "./dist/src/public/index.js",
+      "default": "./dist/src/public/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "client": "tsx src/scripts/live-client.ts",

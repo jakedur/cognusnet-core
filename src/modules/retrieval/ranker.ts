@@ -39,12 +39,12 @@ export function rankMemories(input: {
         return null;
       }
 
-      const lexical = lexicalScore(request.query, `${memory.title}\n${memory.content}`);
+      const lexical = lexicalScore(request.query, `${memory.scopes.path ?? ""}\n${memory.title}\n${memory.content}`);
       const semantic = cosineSimilarity(queryEmbedding, memory.embedding);
-      const scopeWeight = Math.max(0, 1 - scopeDistance * 0.2);
+      const scopeWeight = Math.max(0, 1 - scopeDistance * 0.18);
       const score =
-        lexical * 0.45 +
-        semantic * 0.25 +
+        lexical * 0.5 +
+        semantic * 0.2 +
         Math.max(memory.confidence, 0.1) * 0.15 +
         Math.max(memory.freshness, 0.1) * 0.1 +
         scopeWeight * 0.05 +

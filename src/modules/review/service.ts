@@ -90,7 +90,10 @@ export class ReviewService {
   }
 
   private matchesScope(item: ReviewItem, requestedScope: ReviewListRequest["scopes"]): boolean {
-    const requestedEntries = Object.entries(requestedScope).filter(([, value]) => Boolean(value));
-    return requestedEntries.every(([key, value]) => item.scopes[key as keyof typeof item.scopes] === value);
+    const normalizedRequestedScope = this.scopeResolver.normalizeScope(requestedScope);
+    const normalizedItemScope = this.scopeResolver.normalizeScope(item.scopes);
+    const requestedEntries = Object.entries(normalizedRequestedScope).filter(([, value]) => Boolean(value));
+
+    return requestedEntries.every(([key, value]) => normalizedItemScope[key as keyof typeof normalizedItemScope] === value);
   }
 }

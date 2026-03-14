@@ -30,10 +30,40 @@ This repository contains the open source TypeScript v1 scaffold for CognusNet co
 2. Copy `.env.example` to `.env`
 3. Start Postgres with `docker compose up -d`
 4. Install dependencies with `npm install`
-5. Apply the SQL in `src/infra/postgres/migrations/001_init.sql`
+5. Apply the SQL in `src/infra/postgres/migrations/`
 6. Seed the local tenant with `npm run seed`
 7. Run tests with `npm test`
 8. Start the service with `npm run dev`
+
+The schema step is required before seeding. `npm run seed` inserts into tables like `tenants`, so it will fail with `relation "tenants" does not exist` if you skip the migration.
+
+From the repo root, the simplest schema apply command is:
+
+```powershell
+Get-ChildItem src\infra\postgres\migrations\*.sql | Sort-Object Name | ForEach-Object {
+  Get-Content $_.FullName -Raw | docker exec -i cognusnet-core-postgres-1 psql -U postgres -d cognusnet
+}
+```
+
+If your container name differs, check it with:
+
+```powershell
+docker ps
+```
+
+If you already have `psql` installed locally, you can apply the schema without `docker exec`:
+
+```powershell
+Get-ChildItem src\infra\postgres\migrations\*.sql | Sort-Object Name | ForEach-Object {
+  Get-Content $_.FullName -Raw | psql "postgres://postgres:postgres@localhost:5432/cognusnet"
+}
+```
+
+Then seed the local records:
+
+```powershell
+npm run seed
+```
 
 ## Live Client
 

@@ -24,6 +24,7 @@ export interface Scope {
   workspaceId?: string;
   projectId?: string;
   repositoryId?: string;
+  path?: string;
   userPrivateId?: string;
 }
 
@@ -154,6 +155,12 @@ export interface RetrieveMemoryResponse {
     candidateCount: number;
     selectedCount: number;
     queryEmbeddingDimensions: number;
+    selectedMatches: Array<{
+      memoryId: string;
+      scopeKey: string;
+      scopeDistance: number;
+      pathMatch: "exact" | "ancestor" | "repository" | "broader" | "none";
+    }>;
   };
 }
 
@@ -205,4 +212,46 @@ export interface ReviewDecisionRequest {
 export interface ReviewDecisionResponse {
   reviewItem: ReviewItem;
   promotedMemoryId?: string;
+}
+
+export type CodingArtifactType = "prompt_response" | "code_snippet" | "code_diff" | "documentation";
+
+export interface PrepareCodingContextInput {
+  tenantId: string;
+  actorId: string;
+  scopes: Scope;
+  query: string;
+  memoryTypes?: MemoryType[];
+  recencyDays?: number;
+  entityIds?: string[];
+}
+
+export type CodingOutcomeArtifact =
+  | {
+      artifactType: "prompt_response";
+      query: string;
+      answer: string;
+      sourceLabel?: string;
+      sourceUri?: string;
+    }
+  | {
+      artifactType: "code_snippet" | "code_diff";
+      content: string;
+      sourceLabel?: string;
+      sourceUri?: string;
+    }
+  | {
+      artifactType: "documentation";
+      content: string;
+      sourceLabel?: string;
+      sourceUri?: string;
+    };
+
+export interface RecordCodingOutcomeInput {
+  tenantId: string;
+  actorId: string;
+  scopes: Scope;
+  artifact: CodingOutcomeArtifact;
+  idempotencyKey?: string;
+  capturedAt?: string;
 }

@@ -14,22 +14,27 @@ export class RetrievalService {
   ) {}
 
   async retrieve(request: RetrieveMemoryRequest, actor: AuthenticatedActor): Promise<RetrieveMemoryResponse> {
-    this.scopeResolver.ensureScoped(request.scopes);
-    const queryEmbedding = await this.embeddings.embed(request.query);
-    const tenantMemories = await this.memories.listByTenant(request.tenantId);
+    const normalizedScopes = this.scopeResolver.normalizeScope(request.scopes);
+    this.scopeResolver.ensureScoped(normalizedScopes);
+    const normalizedRequest: RetrieveMemoryRequest = {
+      ...request,
+      scopes: normalizedScopes
+    };
+    const queryEmbedding = await this.embeddings.embed(normalizedRequest.query);
+    const tenantMemories = await this.memories.listByTenant(normalizedRequest.tenantId);
 
     const filtered = tenantMemories.filter((memory) => {
-      if (request.memoryTypes && !request.memoryTypes.includes(memory.type)) {
+      if (normalizedRequest.memoryTypes && !normalizedRequest.memoryTypes.includes(memory.type)) {
         return false;
       }
 
-      if (!this.scopeResolver.isAccessible(request.scopes, memory.scopes)) {
+      if (!this.scopeResolver.isAccessible(normalizedRequest.scopes, memory.scopes)) {
         return false;
       }
 
-      if (request.recencyDays) {
+      if (normalizedRequest.recencyDays) {
         const ageInDays = (Date.now() - new Date(memory.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
-        if (ageInDays > request.recencyDays) {
+        if (ageInDays > normalizedRequest.recencyDays) {
           return false;
         }
       }
@@ -38,18 +43,18 @@ export class RetrievalService {
     });
 
     const ranked = rankMemories({
-      request,
+      request: normalizedRequest,
       queryEmbedding,
       candidates: filtered,
       scopeResolver: this.scopeResolver
     }).slice(0, 8);
 
     await this.audits.record({
-      tenantId: request.tenantId,
-      actorId: request.actorId,
+      tenantId: normalizedRequest.tenantId,
+      actorId: normalizedRequest.actorId,
       action: "memory.retrieve",
       resourceType: "memory_query",
-      resourceId: request.query,
+      resourceId: normalizedRequest.query,
       metadata: {
         apiKeyId: actor.apiKeyId,
         candidateCount: filtered.length,
@@ -69,7 +74,13 @@ export class RetrievalService {
       trace: {
         candidateCount: filtered.length,
         selectedCount: ranked.length,
-        queryEmbeddingDimensions: queryEmbedding.length
+        queryEmbeddingDimensions: queryEmbedding.length,
+        selectedMatches: ranked.map((item) => ({
+          memoryId: item.memory.id,
+          scopeKey: this.scopeResolver.scopeKey(item.memory.scopes),
+          scopeDistance: item.scopeDistance,
+          pathMatch: this.scopeResolver.describePathMatch(normalizedRequest.scopes, item.memory.scopes)
+        }))
       }
     };
   }

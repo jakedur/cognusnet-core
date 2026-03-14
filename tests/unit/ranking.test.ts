@@ -66,4 +66,43 @@ describe("rankMemories", () => {
 
     expect(ranked[0]?.memory.id).toBe(exact.id);
   });
+
+  it("ranks exact file path matches above parent directory and repository memories", async () => {
+    const embeddings = new DeterministicEmbeddingProvider();
+    const request: RetrieveMemoryRequest = {
+      tenantId: "tenant-alpha",
+      actorId: "actor-1",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      query: "auth middleware server.ts",
+      interactionMode: "coding"
+    };
+
+    const exact = await buildMemory({
+      title: "Auth middleware @ src/api/server.ts",
+      content: "The request auth middleware lives in src/api/server.ts.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      confidence: 0.9
+    });
+    const parent = await buildMemory({
+      title: "Auth middleware @ src/api",
+      content: "API bootstrap patterns live under src/api.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api" },
+      confidence: 0.9
+    });
+    const repository = await buildMemory({
+      title: "Architecture note",
+      content: "Authentication is handled centrally.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+      confidence: 0.9
+    });
+
+    const ranked = rankMemories({
+      request,
+      queryEmbedding: await embeddings.embed(request.query),
+      candidates: [repository, parent, exact],
+      scopeResolver: new ScopeResolver()
+    });
+
+    expect(ranked.map((entry) => entry.memory.id)).toEqual([exact.id, parent.id, repository.id]);
+  });
 });

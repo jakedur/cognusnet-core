@@ -16,7 +16,7 @@ function toPgVector(vector: number[]): string {
 }
 
 function toScopeColumns(scope: Scope): Array<string | null> {
-  return [scope.workspaceId ?? null, scope.projectId ?? null, scope.repositoryId ?? null, scope.userPrivateId ?? null];
+  return [scope.workspaceId ?? null, scope.projectId ?? null, scope.repositoryId ?? null, scope.path ?? null, scope.userPrivateId ?? null];
 }
 
 function rowToScope(row: Record<string, unknown>): Scope {
@@ -24,6 +24,7 @@ function rowToScope(row: Record<string, unknown>): Scope {
     workspaceId: (row.workspace_id as string | null) ?? undefined,
     projectId: (row.project_id as string | null) ?? undefined,
     repositoryId: (row.repository_id as string | null) ?? undefined,
+    path: (row.path as string | null) ?? undefined,
     userPrivateId: (row.user_private_id as string | null) ?? undefined
   };
 }
@@ -104,11 +105,11 @@ export class PostgresRepositories implements Repositories {
     save: async (event: RawEvent): Promise<void> => {
       await this.pool.query(
         `INSERT INTO raw_events (
-          id, tenant_id, actor_id, workspace_id, project_id, repository_id, user_private_id,
+          id, tenant_id, actor_id, workspace_id, project_id, repository_id, path, user_private_id,
           artifact_type, artifact_payload, normalized_text, provenance, idempotency_key, created_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9::jsonb, $10, $11::jsonb, $12, $13
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10::jsonb, $11, $12::jsonb, $13, $14
         )`,
         [
           event.id,
@@ -130,13 +131,13 @@ export class PostgresRepositories implements Repositories {
     save: async (memory: MemoryRecord): Promise<void> => {
       await this.pool.query(
         `INSERT INTO memory_records (
-          id, tenant_id, actor_id, workspace_id, project_id, repository_id, user_private_id,
+          id, tenant_id, actor_id, workspace_id, project_id, repository_id, path, user_private_id,
           memory_type, title, content, attributes, confidence, freshness, pinned, stale, status,
           embedding, source_ids, sources, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16,
-          $17::vector, $18, $19::jsonb, $20, $21
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17,
+          $18::vector, $19, $20::jsonb, $21, $22
         )`,
         [
           memory.id,
@@ -208,11 +209,19 @@ export class PostgresRepositories implements Repositories {
       scopes: Scope;
       type: MemoryRecord["type"];
       title: string;
+      mergeKey?: string;
     }): Promise<MemoryRecord | null> => {
-      const result = await this.pool.query(
-        `SELECT * FROM memory_records WHERE tenant_id = $1 AND memory_type = $2 AND title = $3`,
-        [input.tenantId, input.type, input.title]
-      );
+      const result =
+        input.mergeKey
+          ? await this.pool.query(
+              `SELECT * FROM memory_records
+               WHERE tenant_id = $1 AND memory_type = $2 AND attributes->>'mergeKey' = $3`,
+              [input.tenantId, input.type, input.mergeKey]
+            )
+          : await this.pool.query(
+              `SELECT * FROM memory_records WHERE tenant_id = $1 AND memory_type = $2 AND title = $3`,
+              [input.tenantId, input.type, input.title]
+            );
 
       for (const row of result.rows) {
         const memory = this.mapMemory(row);
@@ -229,11 +238,11 @@ export class PostgresRepositories implements Repositories {
     enqueue: async (item: ReviewItem): Promise<void> => {
       await this.pool.query(
         `INSERT INTO review_queue (
-          id, tenant_id, event_id, workspace_id, project_id, repository_id, user_private_id,
+          id, tenant_id, event_id, workspace_id, project_id, repository_id, path, user_private_id,
           candidate, reason, status, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8::jsonb, $9, $10, $11, $12
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9::jsonb, $10, $11, $12, $13
         )`,
         [
           item.id,

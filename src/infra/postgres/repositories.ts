@@ -58,6 +58,26 @@ export class PostgresRepositories implements Repositories {
   };
 
   rawEvents = {
+    findById: async (id: string): Promise<RawEvent | null> => {
+      const result = await this.pool.query(`SELECT * FROM raw_events WHERE id = $1`, [id]);
+      const row = result.rows[0];
+      if (!row) {
+        return null;
+      }
+
+      return {
+        id: row.id,
+        tenantId: row.tenant_id,
+        scopes: rowToScope(row),
+        actorId: row.actor_id,
+        artifactType: row.artifact_type,
+        artifactPayload: row.artifact_payload,
+        normalizedText: row.normalized_text,
+        provenance: row.provenance,
+        idempotencyKey: row.idempotency_key ?? undefined,
+        createdAt: row.created_at.toISOString()
+      };
+    },
     findByIdempotencyKey: async (tenantId: string, idempotencyKey: string): Promise<RawEvent | null> => {
       const result = await this.pool.query(`SELECT * FROM raw_events WHERE tenant_id = $1 AND idempotency_key = $2`, [
         tenantId,
@@ -244,6 +264,25 @@ export class PostgresRepositories implements Repositories {
         createdAt: (row.created_at as Date).toISOString(),
         updatedAt: (row.updated_at as Date).toISOString()
       }));
+    },
+    findById: async (id: string): Promise<ReviewItem | null> => {
+      const result = await this.pool.query(`SELECT * FROM review_queue WHERE id = $1`, [id]);
+      const row = result.rows[0];
+      if (!row) {
+        return null;
+      }
+
+      return {
+        id: row.id as string,
+        tenantId: row.tenant_id as string,
+        scopes: rowToScope(row),
+        eventId: row.event_id as string,
+        candidate: row.candidate as ReviewItem["candidate"],
+        reason: row.reason as string,
+        status: row.status as ReviewItem["status"],
+        createdAt: (row.created_at as Date).toISOString(),
+        updatedAt: (row.updated_at as Date).toISOString()
+      };
     },
     update: async (item: ReviewItem): Promise<void> => {
       await this.pool.query(

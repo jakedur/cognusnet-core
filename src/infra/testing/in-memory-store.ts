@@ -29,6 +29,10 @@ export class InMemoryStore implements Repositories {
   };
 
   rawEvents = {
+    findById: async (id: string): Promise<RawEvent | null> => {
+      const event = this.rawEventRows.get(id);
+      return event ? clone(event) : null;
+    },
     findByIdempotencyKey: async (tenantId: string, idempotencyKey: string): Promise<RawEvent | null> => {
       for (const event of this.rawEventRows.values()) {
         if (event.tenantId === tenantId && event.idempotencyKey === idempotencyKey) {
@@ -88,6 +92,10 @@ export class InMemoryStore implements Repositories {
       return [...this.reviewRows.values()]
         .filter((item) => item.status === "pending" && (!tenantId || item.tenantId === tenantId))
         .map((item) => clone(item));
+    },
+    findById: async (id: string): Promise<ReviewItem | null> => {
+      const record = this.reviewRows.get(id);
+      return record ? clone(record) : null;
     },
     update: async (item: ReviewItem): Promise<void> => {
       this.reviewRows.set(item.id, clone(item));

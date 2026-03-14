@@ -11,10 +11,16 @@
       "default": "./dist/src/public/index.js"
     }
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "client": "tsx src/scripts/live-client.ts",
     "dev": "tsx watch src/index.ts",
+    "prepare": "npm run build",
     "seed": "tsx src/scripts/seed.ts",
     "start": "node dist/src/index.js",
     "test": "vitest run",

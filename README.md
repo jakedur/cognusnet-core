@@ -9,8 +9,9 @@ This repo is the portable, developer-facing layer of CognusNet:
 - local/server reference implementation
 - Postgres schema and local dev stack
 - seed scripts, live client, and tests
+- basic review and feedback APIs
 
-The hosted SaaS, enterprise controls, billing, advanced ranking, and operational tooling live in the private `cognusnet` cloud repo.
+The hosted SaaS, enterprise controls, billing, advanced ranking, and operational tooling live outside this public repo.
 
 ## Docs
 
@@ -23,7 +24,6 @@ This repository contains the open source TypeScript v1 scaffold for CognusNet co
 - Fastify HTTP service with `POST /v1/memory/retrieve`, `POST /v1/memory/write`, and `POST /v1/memory/feedback`
 - TypeScript SDK client
 - Postgres + `pgvector` schema
-- Internal review and audit console
 - TDD-focused test suite covering unit, contract, integration, SDK, and schema checks
 
 ## Local Setup
@@ -59,9 +59,6 @@ Defaults target the local seeded records:
 
 Override them with environment variables like `COGNUSNET_BASE_URL`, `COGNUSNET_API_KEY`, `COGNUSNET_TENANT_ID`, `COGNUSNET_WORKSPACE_ID`, `COGNUSNET_PROJECT_ID`, and `COGNUSNET_REPOSITORY_ID`.
 
-## Codex Environment
+## Notes
 
-Repo-local templates for configuring a ChatGPT Codex local environment live in:
-
-- [.codex/local-environment.md](.codex/local-environment.md)
-- [.codex/local-environment.template.toml](.codex/local-environment.template.toml)
+This public repo intentionally excludes private/cloud-only operational tooling and repo-local Codex configuration.

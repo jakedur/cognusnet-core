@@ -9,10 +9,8 @@ import { EventService } from "./modules/events/service";
 import { ExtractionService } from "./modules/extraction/service";
 import { MemoryService } from "./modules/memory/service";
 import { RetrievalService } from "./modules/retrieval/service";
-import { ReviewService } from "./modules/review/service";
 import { ScopeResolver } from "./modules/tenancy/scope";
 import type { Repositories } from "./ports/repositories";
-import { renderInternalConsole } from "./ui/internal-console";
 
 const scopeSchema = z
   .object({
@@ -103,7 +101,6 @@ export function createApp(input: { repositories: Repositories; embeddingProvider
   const memoryService = new MemoryService(input.repositories.memories, input.repositories.reviews, embeddings, scopeResolver);
   const retrieval = new RetrievalService(input.repositories.memories, embeddings, audits, scopeResolver);
   const events = new EventService(input.repositories.rawEvents, new ExtractionService(), memoryService, audits, scopeResolver);
-  const reviews = new ReviewService(input.repositories.reviews);
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -146,20 +143,6 @@ export function createApp(input: { repositories: Repositories; embeddingProvider
         memory,
         auditReference: `${body.tenantId}:${body.memoryId}:${body.action}`
       });
-    } catch (error) {
-      return handleError(reply, error);
-    }
-  });
-
-  app.get("/internal/console/:tenantId", async (request, reply) => {
-    try {
-      const params = z.object({ tenantId: z.string().min(1) }).parse(request.params);
-      await auth.authenticate(request.headers["x-api-key"] as string | undefined, params.tenantId);
-      const [reviewItems, auditEntries] = await Promise.all([
-        reviews.listPending(params.tenantId),
-        audits.listRecent(params.tenantId, 50)
-      ]);
-      return reply.type("text/html").send(renderInternalConsole({ reviews: reviewItems, audits: auditEntries }));
     } catch (error) {
       return handleError(reply, error);
     }

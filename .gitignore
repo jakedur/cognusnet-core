@@ -8,6 +8,7 @@ coverage/
 *.log
 
 .env
+.codex/
 
 .DS_Store
 

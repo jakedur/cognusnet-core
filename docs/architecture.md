@@ -365,7 +365,7 @@ V1 retrieval strategy:
 - Queue: Postgres-backed jobs or a lightweight queue for extraction tasks
 - Object storage: optional for large raw artifacts
 - Auth: tenant-aware JWT or API token model
-- Admin UI: minimal internal console for memory inspection and review
+- Admin UI: minimal review surface for memory inspection and correction
 
 V1 should optimize for shipping and iteration speed rather than microservice purity. A modular monolith is the correct initial architecture.
 
@@ -470,7 +470,7 @@ These do not block the architecture baseline but must be resolved during impleme
 - Whether V1 raw event payloads live fully in Postgres or partially in object storage
 - Which embedding provider to use initially
 - Whether the first external integration is IDE-first or server API-first
-- Whether review workflow is internal-only or exposed to customers in V1
+- Whether the first review surface is operator-oriented or customer-facing
 
 ## Initial Recommendation
 

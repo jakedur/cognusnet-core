@@ -11,8 +11,6 @@ This repo is the portable, developer-facing layer of CognusNet:
 - seed scripts, live client, and tests
 - basic review and feedback APIs
 
-The hosted SaaS, enterprise controls, billing, advanced ranking, and operational tooling live outside this public repo.
-
 ## Docs
 
 - [Architecture](docs/architecture.md)

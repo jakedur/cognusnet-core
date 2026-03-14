@@ -56,7 +56,3 @@ Defaults target the local seeded records:
 - `repositoryId`: `repository-1`
 
 Override them with environment variables like `COGNUSNET_BASE_URL`, `COGNUSNET_API_KEY`, `COGNUSNET_TENANT_ID`, `COGNUSNET_WORKSPACE_ID`, `COGNUSNET_PROJECT_ID`, and `COGNUSNET_REPOSITORY_ID`.
-
-## Notes
-
-This public repo intentionally excludes private/cloud-only operational tooling and repo-local Codex configuration.

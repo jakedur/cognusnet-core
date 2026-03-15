@@ -110,4 +110,44 @@ describe("POST /v1/memory/write", () => {
     expect(testContext.store.snapshot().rawEvents[0]?.scopes.path).toBe("src/api/server.ts");
     expect(testContext.store.snapshot().memories[0]?.scopes.path).toBe("src/api/server.ts");
   });
+
+  it("stores coding intent as repository-scoped memory while preserving origin path metadata", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const response = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/demo.py" },
+        artifactType: "coding_intent",
+        artifactPayload: {
+          task: "Print ahhh",
+          rationale: "because the sky is blue",
+          constraints: ["single print statement"]
+        },
+        provenance: {
+          sourceKind: "coding_intent",
+          sourceLabel: "Coding intent",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        },
+        idempotencyKey: "event-intent-1"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const snapshot = testContext.store.snapshot();
+    expect(snapshot.rawEvents[0]?.scopes.path).toBe("scripts/demo.py");
+    expect(snapshot.memories[0]?.scopes).toEqual({
+      workspaceId: "w1",
+      projectId: "p1",
+      repositoryId: "r1"
+    });
+    expect(snapshot.memories[0]?.attributes.originPath).toBe("scripts/demo.py");
+    expect(snapshot.memories[0]?.type).toBe("operational_note");
+  });
 });

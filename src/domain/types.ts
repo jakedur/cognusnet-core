@@ -9,6 +9,7 @@ export type MemoryType =
 export type ArtifactType =
   | "conversation"
   | "prompt_response"
+  | "coding_intent"
   | "tool_output"
   | "code_snippet"
   | "code_diff"
@@ -214,7 +215,7 @@ export interface ReviewDecisionResponse {
   promotedMemoryId?: string;
 }
 
-export type CodingArtifactType = "prompt_response" | "code_snippet" | "code_diff" | "documentation";
+export type CodingArtifactType = "prompt_response" | "coding_intent" | "code_snippet" | "code_diff" | "documentation";
 
 export interface PrepareCodingContextInput {
   tenantId: string;
@@ -247,11 +248,29 @@ export type CodingOutcomeArtifact =
       sourceUri?: string;
     };
 
+export interface CodingIntentArtifact {
+  artifactType: "coding_intent";
+  task: string;
+  rationale?: string;
+  constraints?: string[];
+  sourceLabel?: string;
+  sourceUri?: string;
+}
+
 export interface RecordCodingOutcomeInput {
   tenantId: string;
   actorId: string;
   scopes: Scope;
   artifact: CodingOutcomeArtifact;
+  idempotencyKey?: string;
+  capturedAt?: string;
+}
+
+export interface RecordCodingIntentInput {
+  tenantId: string;
+  actorId: string;
+  scopes: Scope;
+  artifact: CodingIntentArtifact;
   idempotencyKey?: string;
   capturedAt?: string;
 }

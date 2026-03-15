@@ -1,7 +1,14 @@
-import type { CandidateMemory, RawEvent } from "../../domain/types";
+import type { CandidateMemory, RawEvent, Scope } from "../../domain/types";
 
 export class ExtractionService {
   extractCandidates(event: RawEvent): CandidateMemory[] {
+    if (event.artifactType === "coding_intent") {
+      const codingIntentCandidate = this.extractCodingIntentCandidate(event);
+      if (codingIntentCandidate) {
+        return [codingIntentCandidate];
+      }
+    }
+
     if (event.artifactType === "prompt_response") {
       const promptResponseCandidate = this.extractPromptResponseCandidate(event);
       if (promptResponseCandidate) {
@@ -100,11 +107,12 @@ export class ExtractionService {
     label: string,
     content: string,
     confidence: number,
-    attributes?: Record<string, unknown>
+    attributes?: Record<string, unknown>,
+    scopesOverride?: Scope
   ): CandidateMemory {
     return {
       tenantId: event.tenantId,
-      scopes: event.scopes,
+      scopes: scopesOverride ?? event.scopes,
       actorId: event.actorId,
       type,
       title: content ? `${label}: ${content.slice(0, 80)}` : label,
@@ -117,6 +125,58 @@ export class ExtractionService {
       confidence,
       freshness: 1
     };
+  }
+
+  private extractCodingIntentCandidate(event: RawEvent): CandidateMemory | null {
+    const payload = event.artifactPayload as
+      | {
+          task?: unknown;
+          rationale?: unknown;
+          constraints?: unknown;
+        }
+      | string;
+    if (typeof payload === "string") {
+      return null;
+    }
+
+    const task = typeof payload.task === "string" ? payload.task.trim() : "";
+    const rationale = typeof payload.rationale === "string" ? payload.rationale.trim() : "";
+    const constraints = Array.isArray(payload.constraints)
+      ? payload.constraints.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean)
+      : [];
+
+    if (!task) {
+      return null;
+    }
+
+    const contentLines = [`Task: ${task}`];
+    if (rationale) {
+      contentLines.push(`Rationale: ${rationale}`);
+    }
+    if (constraints.length > 0) {
+      contentLines.push(`Constraints: ${constraints.join("; ")}`);
+    }
+
+    return this.buildCandidate(
+      event,
+      "operational_note",
+      "Coding intent",
+      contentLines.join("\n"),
+      0.94,
+      {
+        task,
+        ...(rationale ? { rationale } : {}),
+        ...(constraints.length > 0 ? { constraints } : {}),
+        ...(event.scopes.path ? { originPath: event.scopes.path } : {}),
+        mergeKey: `coding_intent:${this.normalizeKey(task)}`
+      },
+      {
+        workspaceId: event.scopes.workspaceId,
+        projectId: event.scopes.projectId,
+        repositoryId: event.scopes.repositoryId,
+        userPrivateId: event.scopes.userPrivateId
+      }
+    );
   }
 
   private extractPromptResponseCandidate(event: RawEvent): CandidateMemory | null {

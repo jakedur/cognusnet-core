@@ -20,6 +20,8 @@
     "build": "tsc -p tsconfig.json",
     "client": "tsx src/scripts/live-client.ts",
     "dev": "tsx watch src/index.ts",
+    "mcp": "tsx src/scripts/mcp-server.ts",
+    "verify:mcp": "tsx src/scripts/verify-mcp.ts",
     "prepare": "npm run build",
     "seed": "tsx src/scripts/seed.ts",
     "start": "node dist/src/index.js",
@@ -31,10 +33,11 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "fastify": "^5.2.1",
     "pg": "^8.13.3",
     "pino": "^9.6.0",
-    "zod": "^3.24.2"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.13.14",

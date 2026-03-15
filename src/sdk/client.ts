@@ -1,7 +1,9 @@
 import type {
+  CodingIntentArtifact,
   CodingOutcomeArtifact,
   FeedbackRequest,
   PrepareCodingContextInput,
+  RecordCodingIntentInput,
   RecordCodingOutcomeInput,
   ReviewDecisionRequest,
   ReviewDecisionResponse,
@@ -43,6 +45,25 @@ export class CognusNetClient {
 
   async recordCodingOutcome(input: RecordCodingOutcomeInput): Promise<WriteMemoryResponse> {
     const artifact = this.toWriteArtifact(input.artifact);
+    return this.writeMemoryEvent({
+      tenantId: input.tenantId,
+      actorId: input.actorId,
+      scopes: input.scopes,
+      artifactType: artifact.artifactType,
+      artifactPayload: artifact.artifactPayload,
+      provenance: {
+        sourceKind: artifact.artifactType,
+        sourceLabel: artifact.sourceLabel,
+        sourceUri: artifact.sourceUri,
+        actorId: input.actorId,
+        capturedAt: input.capturedAt ?? new Date().toISOString()
+      },
+      idempotencyKey: input.idempotencyKey
+    });
+  }
+
+  async recordCodingIntent(input: RecordCodingIntentInput): Promise<WriteMemoryResponse> {
+    const artifact = this.toIntentArtifact(input.artifact);
     return this.writeMemoryEvent({
       tenantId: input.tenantId,
       actorId: input.actorId,
@@ -137,6 +158,24 @@ export class CognusNetClient {
       sourceLabel:
         input.sourceLabel ??
         (input.artifactType === "documentation" ? "Coding documentation" : "Coding artifact"),
+      sourceUri: input.sourceUri
+    };
+  }
+
+  private toIntentArtifact(input: CodingIntentArtifact): {
+    artifactType: WriteMemoryRequest["artifactType"];
+    artifactPayload: unknown;
+    sourceLabel: string;
+    sourceUri?: string;
+  } {
+    return {
+      artifactType: "coding_intent",
+      artifactPayload: {
+        task: input.task,
+        ...(input.rationale ? { rationale: input.rationale } : {}),
+        ...(input.constraints?.length ? { constraints: input.constraints } : {})
+      },
+      sourceLabel: input.sourceLabel ?? "Coding intent",
       sourceUri: input.sourceUri
     };
   }

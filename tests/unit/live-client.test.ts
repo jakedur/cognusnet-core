@@ -40,4 +40,38 @@ describe("runLiveClient", () => {
     expect(output).toContain("CognusNet live client");
     expect(output).toContain("npm run client -- retrieve");
   });
+
+  it("records coding intent with rationale and constraints", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ eventId: "event-intent-1", extractionStatus: "processed", acceptedCount: 1, queuedCount: 0 })
+    });
+
+    await runLiveClient(
+      [
+        "record_coding_intent",
+        "--task",
+        "Print ahhh",
+        "--rationale",
+        "because the sky is blue",
+        "--constraints",
+        "single print statement;omit rationale from code",
+        "--path",
+        "scripts/demo.py"
+      ],
+      {},
+      fetchImpl as unknown as typeof fetch
+    );
+
+    const request = fetchImpl.mock.calls[0]?.[1];
+    expect(request).toBeDefined();
+    const payload = JSON.parse((request as { body: string }).body);
+    expect(payload.scopes.path).toBe("scripts/demo.py");
+    expect(payload.artifactType).toBe("coding_intent");
+    expect(payload.artifactPayload).toEqual({
+      task: "Print ahhh",
+      rationale: "because the sky is blue",
+      constraints: ["single print statement", "omit rationale from code"]
+    });
+  });
 });

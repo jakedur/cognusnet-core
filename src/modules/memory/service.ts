@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { CandidateMemory, MemoryRecord, MemorySource, RawEvent, Scope } from "../../domain/types";
+import type { ArtifactType, CandidateMemory, MemoryRecord, MemorySource, RawEvent, Scope } from "../../domain/types";
 import type { MemoryRepository, ReviewQueueRepository } from "../../ports/repositories";
 import type { EmbeddingProvider } from "../embeddings/provider";
 import { ScopeResolver } from "../tenancy/scope";
+
+type EvidenceQuality = "high" | "medium" | "low";
 
 export class MemoryService {
   constructor(
@@ -22,17 +24,33 @@ export class MemoryService {
         ...candidate,
         scopes: this.scopeResolver.normalizeScope(candidate.scopes)
       };
+      const calibration = this.calibrateConfidence(normalizedCandidate);
+      const candidateWithCalibration: CandidateMemory = {
+        ...normalizedCandidate,
+        confidence: calibration.calibratedConfidence,
+        attributes: {
+          ...normalizedCandidate.attributes,
+          confidenceCalibration: {
+            artifactType: calibration.artifactType,
+            evidenceQuality: calibration.evidenceQuality,
+            threshold: calibration.threshold,
+            baseConfidence: calibration.baseConfidence,
+            calibratedConfidence: calibration.calibratedConfidence
+          }
+        }
+      };
+
       const shouldReview =
-        normalizedCandidate.confidence < 0.8 ||
-        this.scopeResolver.scopeKey(normalizedCandidate.scopes) === this.scopeResolver.scopeKey({});
+        candidateWithCalibration.confidence < calibration.threshold ||
+        this.scopeResolver.scopeKey(candidateWithCalibration.scopes) === this.scopeResolver.scopeKey({});
       if (shouldReview) {
         await this.reviews.enqueue({
           id: randomUUID(),
-          tenantId: normalizedCandidate.tenantId,
-          scopes: normalizedCandidate.scopes,
+          tenantId: candidateWithCalibration.tenantId,
+          scopes: candidateWithCalibration.scopes,
           eventId: event.id,
-          candidate: normalizedCandidate,
-          reason: normalizedCandidate.confidence < 0.8 ? "low_confidence" : "broad_scope",
+          candidate: candidateWithCalibration,
+          reason: candidateWithCalibration.confidence < calibration.threshold ? "low_confidence" : "broad_scope",
           status: "pending",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -41,7 +59,7 @@ export class MemoryService {
         continue;
       }
 
-      await this.saveCandidate(event, normalizedCandidate);
+      await this.saveCandidate(event, candidateWithCalibration);
       acceptedCount += 1;
     }
 
@@ -104,6 +122,78 @@ export class MemoryService {
 
   async promoteCandidate(event: RawEvent, candidate: CandidateMemory): Promise<MemoryRecord> {
     return this.saveCandidate(event, candidate);
+  }
+
+  private calibrateConfidence(candidate: CandidateMemory): {
+    artifactType: ArtifactType | "conversation";
+    evidenceQuality: EvidenceQuality;
+    threshold: number;
+    baseConfidence: number;
+    calibratedConfidence: number;
+  } {
+    const artifactType = this.getArtifactType(candidate);
+    const evidenceQuality = this.getEvidenceQuality(candidate);
+
+    const typeThreshold: Record<ArtifactType | "conversation", number> = {
+      coding_intent: 0.78,
+      prompt_response: 0.82,
+      documentation: 0.8,
+      code_diff: 0.79,
+      code_snippet: 0.79,
+      conversation: 0.8,
+      tool_output: 0.84,
+      user_feedback: 0.84
+    };
+
+    const thresholdAdjustment: Record<EvidenceQuality, number> = {
+      high: -0.05,
+      medium: 0,
+      low: 0.06
+    };
+
+    const confidenceAdjustment: Record<EvidenceQuality, number> = {
+      high: 0.04,
+      medium: 0,
+      low: -0.08
+    };
+
+    const threshold = Math.min(0.95, Math.max(0.6, typeThreshold[artifactType] + thresholdAdjustment[evidenceQuality]));
+    const calibratedConfidence = Math.min(1, Math.max(0.1, candidate.confidence + confidenceAdjustment[evidenceQuality]));
+
+    return {
+      artifactType,
+      evidenceQuality,
+      threshold,
+      baseConfidence: candidate.confidence,
+      calibratedConfidence
+    };
+  }
+
+  private getArtifactType(candidate: CandidateMemory): ArtifactType | "conversation" {
+    const artifactType = candidate.attributes.artifactType;
+    if (
+      artifactType === "coding_intent" ||
+      artifactType === "prompt_response" ||
+      artifactType === "documentation" ||
+      artifactType === "code_diff" ||
+      artifactType === "code_snippet" ||
+      artifactType === "tool_output" ||
+      artifactType === "user_feedback"
+    ) {
+      return artifactType;
+    }
+    return "conversation";
+  }
+
+  private getEvidenceQuality(candidate: CandidateMemory): EvidenceQuality {
+    const evidence = candidate.attributes.evidence;
+    if (typeof evidence === "object" && evidence !== null) {
+      const quality = (evidence as { quality?: unknown }).quality;
+      if (quality === "high" || quality === "medium" || quality === "low") {
+        return quality;
+      }
+    }
+    return "medium";
   }
 
   private async saveCandidate(event: RawEvent, candidate: CandidateMemory): Promise<MemoryRecord> {

@@ -1,95 +1,129 @@
 import { describe, expect, it } from "vitest";
 
-import type { RawEvent } from "../../src/domain/types";
+import type { MemoryRecord, RawEvent, ReviewItem } from "../../src/domain/types";
 import { ExtractionService } from "../../src/modules/extraction/service";
+import { DeterministicEmbeddingProvider } from "../../src/modules/embeddings/provider";
+import { MemoryService } from "../../src/modules/memory/service";
+import { ScopeResolver } from "../../src/modules/tenancy/scope";
+import type { MemoryRepository, ReviewQueueRepository } from "../../src/ports/repositories";
+
+const baseEvent = (overrides: Partial<RawEvent>): RawEvent => ({
+  id: overrides.id ?? "event-default",
+  tenantId: "tenant-alpha",
+  scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", ...(overrides.scopes ?? {}) },
+  actorId: "actor-1",
+  artifactType: overrides.artifactType ?? "conversation",
+  artifactPayload: overrides.artifactPayload ?? "",
+  normalizedText: overrides.normalizedText ?? "",
+  provenance: {
+    sourceKind: overrides.provenance?.sourceKind ?? (overrides.artifactType ?? "conversation"),
+    sourceLabel: overrides.provenance?.sourceLabel ?? "Test source",
+    actorId: "actor-1",
+    capturedAt: new Date().toISOString(),
+    ...(overrides.provenance ?? {})
+  },
+  createdAt: new Date().toISOString(),
+  ...overrides
+});
 
 describe("ExtractionService", () => {
   const extraction = new ExtractionService();
 
-  it("promotes explicit decisions at high confidence", () => {
-    const event: RawEvent = {
+  it("promotes explicit decisions at high confidence with explicit evidence", () => {
+    const event = baseEvent({
       id: "event-1",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
-      actorId: "actor-1",
       artifactType: "conversation",
       artifactPayload: "Decision: use Postgres for durable memory",
-      normalizedText: "Decision: use Postgres for durable memory",
-      provenance: {
-        sourceKind: "conversation",
-        sourceLabel: "Team sync",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
-      },
-      createdAt: new Date().toISOString()
-    };
+      normalizedText: "Decision: use Postgres for durable memory"
+    });
 
     const candidates = extraction.extractCandidates(event);
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.type).toBe("decision");
-    expect(candidates[0]?.confidence).toBeGreaterThan(0.9);
+    expect(candidates[0]?.attributes.evidence).toMatchObject({
+      explicitSignals: ["decision_prefix"],
+      quality: "high"
+    });
   });
 
-  it("keeps generic summaries lower confidence for review", () => {
-    const event: RawEvent = {
+  it("extracts mixed-artifact prompt responses into deterministic explicit candidates", () => {
+    const event = baseEvent({
       id: "event-2",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
-      actorId: "actor-1",
-      artifactType: "conversation",
-      artifactPayload: "We discussed cleanup tasks for the memory layer.",
-      normalizedText: "We discussed cleanup tasks for the memory layer.",
-      provenance: {
-        sourceKind: "conversation",
-        sourceLabel: "Standup",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
-      },
-      createdAt: new Date().toISOString()
-    };
-
-    const candidates = extraction.extractCandidates(event);
-    expect(candidates[0]?.type).toBe("conversation_summary");
-    expect(candidates[0]?.confidence).toBeLessThan(0.8);
-  });
-
-  it("promotes prompt responses to durable coding facts when query and answer are structured", () => {
-    const event: RawEvent = {
-      id: "event-3",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
-      actorId: "actor-1",
       artifactType: "prompt_response",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
       artifactPayload: {
-        query: "Where is the auth middleware?",
-        answer: "It lives in api/server.ts."
+        query: "What changed?",
+        answer: "Fact: auth middleware is in src/api/server.ts\nDecision: keep workspace scoping"
       },
       normalizedText: JSON.stringify({
-        query: "Where is the auth middleware?",
-        answer: "It lives in api/server.ts."
-      }),
-      provenance: {
-        sourceKind: "prompt_response",
-        sourceLabel: "Control plane",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
-      },
-      createdAt: new Date().toISOString()
-    };
+        query: "What changed?",
+        answer: "Fact: auth middleware is in src/api/server.ts\nDecision: keep workspace scoping"
+      })
+    });
 
     const candidates = extraction.extractCandidates(event);
-    expect(candidates[0]?.type).toBe("fact");
-    expect(candidates[0]?.confidence).toBeGreaterThanOrEqual(0.9);
-    expect(candidates[0]?.attributes.mergeKey).toBe("coding_answer:where_is_the_auth_middleware");
+    expect(candidates).toHaveLength(2);
+    expect(candidates.map((candidate) => candidate.type)).toEqual(["fact", "decision"]);
+    expect(candidates[0]?.content).toContain("auth middleware");
+    expect(candidates[1]?.content).toContain("keep workspace scoping");
   });
 
-  it("promotes coding intent to a repository-scoped operational note", () => {
-    const event: RawEvent = {
+  it("falls back to text extraction for prompt responses without structured payloads", () => {
+    const event = baseEvent({
+      id: "event-2b",
+      artifactType: "prompt_response",
+      artifactPayload: "Fact: auth middleware is in src/api/server.ts",
+      normalizedText: "Fact: auth middleware is in src/api/server.ts"
+    });
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.type).toBe("fact");
+    expect(candidates[0]?.content).toContain("auth middleware");
+    expect(candidates[0]?.attributes.evidence).toMatchObject({
+      extractor: "prompt_response",
+      quality: "high"
+    });
+  });
+
+  it("keeps low-signal payloads as low-confidence summaries with low-quality evidence", () => {
+    const event = baseEvent({
+      id: "event-3",
+      artifactType: "documentation",
+      artifactPayload: "    ",
+      normalizedText: "\n\n"
+    });
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.type).toBe("document_summary");
+    expect(candidates[0]?.content).toBe("Empty interaction");
+    expect(candidates[0]?.attributes.evidence).toMatchObject({
+      quality: "low",
+      signalCount: 0
+    });
+  });
+
+  it("resolves conflicting candidate facts deterministically", () => {
+    const event = baseEvent({
+      id: "event-4",
+      artifactType: "conversation",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      normalizedText: "Fact: endpoint uses token auth\nFact: endpoint uses API key auth"
+    });
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.type).toBe("fact");
+    expect(candidates[0]?.content).toBe("endpoint uses API key auth");
+    expect(candidates[0]?.attributes.conflictingContents).toEqual(["endpoint uses token auth"]);
+  });
+
+  it("promotes coding intent to a repository-scoped operational note with rich evidence", () => {
+    const event = baseEvent({
       id: "event-intent-1",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/demo.py" },
-      actorId: "actor-1",
       artifactType: "coding_intent",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/demo.py" },
       artifactPayload: {
         task: "Print ahhh",
         rationale: "because the sky is blue",
@@ -99,15 +133,8 @@ describe("ExtractionService", () => {
         task: "Print ahhh",
         rationale: "because the sky is blue",
         constraints: ["single print statement", "omit rationale from code"]
-      }),
-      provenance: {
-        sourceKind: "coding_intent",
-        sourceLabel: "Coding intent",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
-      },
-      createdAt: new Date().toISOString()
-    };
+      })
+    });
 
     const candidates = extraction.extractCandidates(event);
     expect(candidates).toHaveLength(1);
@@ -119,51 +146,78 @@ describe("ExtractionService", () => {
     });
     expect(candidates[0]?.attributes.originPath).toBe("scripts/demo.py");
     expect(candidates[0]?.attributes.mergeKey).toBe("coding_intent:print_ahhh");
-    expect(candidates[0]?.content).toContain("because the sky is blue");
-    expect(candidates[0]?.content).toContain("single print statement");
-    expect(candidates[0]?.confidence).toBeGreaterThan(0.9);
+    expect(candidates[0]?.attributes.evidence).toMatchObject({
+      extractor: "coding_intent",
+      quality: "high"
+    });
   });
 
-  it("promotes code artifacts and docs at high confidence for the coding beta", () => {
-    const codeEvent: RawEvent = {
-      id: "event-4",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
-      actorId: "actor-1",
-      artifactType: "code_diff",
-      artifactPayload: "diff --git a/src/api/server.ts b/src/api/server.ts\n+ auth middleware checks the workspace key",
-      normalizedText: "diff --git a/src/api/server.ts b/src/api/server.ts\n+ auth middleware checks the workspace key",
-      provenance: {
-        sourceKind: "code_diff",
-        sourceLabel: "Commit diff",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
+  it("calibrates confidence by artifact/evidence quality before queueing", async () => {
+    const reviewItems: ReviewItem[] = [];
+    const savedMemories: MemoryRecord[] = [];
+
+    const memories: MemoryRepository = {
+      save: async (memory) => {
+        savedMemories.push(memory);
       },
-      createdAt: new Date().toISOString()
+      update: async () => undefined,
+      findById: async () => null,
+      listByTenant: async () => [],
+      findDuplicate: async () => null
     };
-    const docEvent: RawEvent = {
+
+    const reviews: ReviewQueueRepository = {
+      enqueue: async (item) => {
+        reviewItems.push(item);
+      },
+      listPending: async () => [],
+      findById: async () => null,
+      update: async () => undefined
+    };
+
+    const memoryService = new MemoryService(memories, reviews, new DeterministicEmbeddingProvider(), new ScopeResolver());
+
+    const promptEvent = baseEvent({
       id: "event-5",
-      tenantId: "tenant-alpha",
-      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "docs/auth.md" },
-      actorId: "actor-1",
+      artifactType: "prompt_response",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      artifactPayload: { query: "Where?", answer: "Fact: auth middleware in src/api/server.ts" },
+      normalizedText: "unused"
+    });
+
+    const docEvent = baseEvent({
+      id: "event-6",
       artifactType: "documentation",
-      artifactPayload: "Authentication uses workspace-scoped API keys.",
-      normalizedText: "Authentication uses workspace-scoped API keys.",
-      provenance: {
-        sourceKind: "documentation",
-        sourceLabel: "Auth docs",
-        actorId: "actor-1",
-        capturedAt: new Date().toISOString()
-      },
-      createdAt: new Date().toISOString()
-    };
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "docs/auth.md" },
+      artifactPayload: "",
+      normalizedText: "\n"
+    });
 
-    const codeCandidates = extraction.extractCandidates(codeEvent);
-    const docCandidates = extraction.extractCandidates(docEvent);
+    const concisePromptEvent = baseEvent({
+      id: "event-7",
+      artifactType: "prompt_response",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/auth.ts" },
+      artifactPayload: { query: "Which header?", answer: "x-api-key" },
+      normalizedText: "unused"
+    });
 
-    expect(codeCandidates[0]?.type).toBe("code_pattern");
-    expect(codeCandidates[0]?.confidence).toBeGreaterThan(0.8);
-    expect(docCandidates[0]?.type).toBe("document_summary");
-    expect(docCandidates[0]?.confidence).toBeGreaterThan(0.8);
+    await memoryService.processCandidates(promptEvent, extraction.extractCandidates(promptEvent));
+    await memoryService.processCandidates(concisePromptEvent, extraction.extractCandidates(concisePromptEvent));
+    await memoryService.processCandidates(docEvent, extraction.extractCandidates(docEvent));
+
+    expect(savedMemories).toHaveLength(2);
+    expect(reviewItems).toHaveLength(1);
+    expect(savedMemories[0]?.attributes.confidenceCalibration).toMatchObject({
+      artifactType: "prompt_response",
+      evidenceQuality: "high"
+    });
+    expect(savedMemories[1]?.attributes.confidenceCalibration).toMatchObject({
+      artifactType: "prompt_response",
+      evidenceQuality: "medium"
+    });
+    expect(reviewItems[0]?.candidate.attributes.confidenceCalibration).toMatchObject({
+      artifactType: "documentation",
+      evidenceQuality: "low"
+    });
   });
 });

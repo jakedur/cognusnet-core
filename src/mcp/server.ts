@@ -233,7 +233,9 @@ async function runLoggedToolCall(
   }
 }
 
-function createMcpDiagnosticsLogger(logPath?: string): McpDiagnosticsLogger {
+export function createMcpDiagnosticsLogger(logPath?: string): McpDiagnosticsLogger {
+  let warnedAboutLogPathFailure = false;
+
   return {
     log(event, details) {
       const line = JSON.stringify({
@@ -244,7 +246,25 @@ function createMcpDiagnosticsLogger(logPath?: string): McpDiagnosticsLogger {
       });
       process.stderr.write(`${line}\n`);
       if (logPath) {
-        appendFileSync(logPath, `${line}\n`, "utf8");
+        try {
+          appendFileSync(logPath, `${line}\n`, "utf8");
+        } catch (error) {
+          if (!warnedAboutLogPathFailure) {
+            warnedAboutLogPathFailure = true;
+            const message = error instanceof Error ? error.message : "Unknown log write error";
+            process.stderr.write(
+              `${JSON.stringify({
+                ts: new Date().toISOString(),
+                source: "cognusnet-core:mcp",
+                event: "mcp_log_path_write_failed",
+                details: {
+                  logPath,
+                  message
+                }
+              })}\n`
+            );
+          }
+        }
       }
     }
   };

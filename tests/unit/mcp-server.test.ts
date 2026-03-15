@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createCodingMcpServer, loadCodingMcpConfig } from "../../src/mcp/server";
+import { createCodingMcpServer, createMcpDiagnosticsLogger, loadCodingMcpConfig } from "../../src/mcp/server";
 
 const { Client } = require("../../node_modules/@modelcontextprotocol/sdk/dist/cjs/client/index.js");
 const { InMemoryTransport } = require("../../node_modules/@modelcontextprotocol/sdk/dist/cjs/inMemory.js");
@@ -183,6 +183,22 @@ describe("coding MCP server", () => {
     });
 
     await Promise.all([client.close(), server.close()]);
+  });
+
+
+  it("treats diagnostic log path write failures as best effort", () => {
+    const logger = createMcpDiagnosticsLogger("bad\0path");
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    expect(() => {
+      logger.log("mcp_server_starting", { baseUrl: "http://127.0.0.1:3000" });
+      logger.log("tool_call_started", { toolName: "prepare_coding_context" });
+    }).not.toThrow();
+
+    const warningWrites = stderrSpy.mock.calls.filter(([value]) =>
+      typeof value === "string" && value.includes('"event":"mcp_log_path_write_failed"')
+    );
+    expect(warningWrites).toHaveLength(1);
   });
 
   it("emits diagnostic logs for tool calls", async () => {

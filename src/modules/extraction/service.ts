@@ -145,13 +145,13 @@ export class ExtractionService {
   private extractPromptResponseCandidates(event: RawEvent): CandidateDraft[] {
     const payload = event.artifactPayload as { query?: unknown; answer?: unknown } | string;
     if (typeof payload === "string") {
-      return [];
+      return this.extractPromptResponseTextFallback(event);
     }
 
     const query = typeof payload.query === "string" ? payload.query.trim() : "";
     const answer = typeof payload.answer === "string" ? payload.answer.trim() : "";
     if (!query || !answer) {
-      return [];
+      return this.extractPromptResponseTextFallback(event);
     }
 
     const explicit = this.extractExplicitLineDrafts(event, answer, "prompt_response");
@@ -174,9 +174,38 @@ export class ExtractionService {
           artifactType: event.artifactType,
           explicitSignals: ["query", "answer"],
           signalCount: 2,
-          quality: answer.length > 60 ? "medium" : "low",
+          quality: answer.length > 60 ? "high" : "medium",
           hasStructuredPayload: true,
           contentLength: answer.length
+        }
+      }
+    ];
+  }
+
+  private extractPromptResponseTextFallback(event: RawEvent): CandidateDraft[] {
+    const explicit = this.extractExplicitLineDrafts(event, event.normalizedText, "prompt_response");
+    if (explicit.length > 0) {
+      return explicit;
+    }
+
+    const summary = this.summarize(event.normalizedText);
+    return [
+      {
+        type: "conversation_summary",
+        label: "Interaction summary",
+        content: summary,
+        confidence: 0.58,
+        attributes: {
+          mergeKey: this.buildScopedMergeKey(event, "conversation_summary")
+        },
+        evidence: {
+          extractor: "prompt_response",
+          artifactType: event.artifactType,
+          explicitSignals: summary === "Empty interaction" ? [] : ["summary"],
+          signalCount: summary === "Empty interaction" ? 0 : 1,
+          quality: summary === "Empty interaction" ? "low" : "medium",
+          hasStructuredPayload: typeof event.artifactPayload === "object" && event.artifactPayload !== null,
+          contentLength: summary.length
         }
       }
     ];
@@ -339,7 +368,7 @@ export class ExtractionService {
             artifactType: event.artifactType,
             explicitSignals: ["fact_prefix"],
             signalCount: 1,
-            quality: content.length > 16 ? "high" : "low",
+            quality: content.length > 16 ? "high" : extractorName === "prompt_response" ? "medium" : "low",
             hasStructuredPayload: typeof event.artifactPayload === "object" && event.artifactPayload !== null,
             contentLength: content.length
           }

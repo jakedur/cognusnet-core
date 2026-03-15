@@ -68,6 +68,24 @@ describe("ExtractionService", () => {
     expect(candidates[1]?.content).toContain("keep workspace scoping");
   });
 
+  it("falls back to text extraction for prompt responses without structured payloads", () => {
+    const event = baseEvent({
+      id: "event-2b",
+      artifactType: "prompt_response",
+      artifactPayload: "Fact: auth middleware is in src/api/server.ts",
+      normalizedText: "Fact: auth middleware is in src/api/server.ts"
+    });
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.type).toBe("fact");
+    expect(candidates[0]?.content).toContain("auth middleware");
+    expect(candidates[0]?.attributes.evidence).toMatchObject({
+      extractor: "prompt_response",
+      quality: "high"
+    });
+  });
+
   it("keeps low-signal payloads as low-confidence summaries with low-quality evidence", () => {
     const event = baseEvent({
       id: "event-3",
@@ -175,14 +193,27 @@ describe("ExtractionService", () => {
       normalizedText: "\n"
     });
 
+    const concisePromptEvent = baseEvent({
+      id: "event-7",
+      artifactType: "prompt_response",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/auth.ts" },
+      artifactPayload: { query: "Which header?", answer: "x-api-key" },
+      normalizedText: "unused"
+    });
+
     await memoryService.processCandidates(promptEvent, extraction.extractCandidates(promptEvent));
+    await memoryService.processCandidates(concisePromptEvent, extraction.extractCandidates(concisePromptEvent));
     await memoryService.processCandidates(docEvent, extraction.extractCandidates(docEvent));
 
-    expect(savedMemories).toHaveLength(1);
+    expect(savedMemories).toHaveLength(2);
     expect(reviewItems).toHaveLength(1);
     expect(savedMemories[0]?.attributes.confidenceCalibration).toMatchObject({
       artifactType: "prompt_response",
       evidenceQuality: "high"
+    });
+    expect(savedMemories[1]?.attributes.confidenceCalibration).toMatchObject({
+      artifactType: "prompt_response",
+      evidenceQuality: "medium"
     });
     expect(reviewItems[0]?.candidate.attributes.confidenceCalibration).toMatchObject({
       artifactType: "documentation",

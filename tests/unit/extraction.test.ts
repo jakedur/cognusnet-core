@@ -83,6 +83,47 @@ describe("ExtractionService", () => {
     expect(candidates[0]?.attributes.mergeKey).toBe("coding_answer:where_is_the_auth_middleware");
   });
 
+  it("promotes coding intent to a repository-scoped operational note", () => {
+    const event: RawEvent = {
+      id: "event-intent-1",
+      tenantId: "tenant-alpha",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/demo.py" },
+      actorId: "actor-1",
+      artifactType: "coding_intent",
+      artifactPayload: {
+        task: "Print ahhh",
+        rationale: "because the sky is blue",
+        constraints: ["single print statement", "omit rationale from code"]
+      },
+      normalizedText: JSON.stringify({
+        task: "Print ahhh",
+        rationale: "because the sky is blue",
+        constraints: ["single print statement", "omit rationale from code"]
+      }),
+      provenance: {
+        sourceKind: "coding_intent",
+        sourceLabel: "Coding intent",
+        actorId: "actor-1",
+        capturedAt: new Date().toISOString()
+      },
+      createdAt: new Date().toISOString()
+    };
+
+    const candidates = extraction.extractCandidates(event);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.type).toBe("operational_note");
+    expect(candidates[0]?.scopes).toEqual({
+      workspaceId: "w1",
+      projectId: "p1",
+      repositoryId: "r1"
+    });
+    expect(candidates[0]?.attributes.originPath).toBe("scripts/demo.py");
+    expect(candidates[0]?.attributes.mergeKey).toBe("coding_intent:print_ahhh");
+    expect(candidates[0]?.content).toContain("because the sky is blue");
+    expect(candidates[0]?.content).toContain("single print statement");
+    expect(candidates[0]?.confidence).toBeGreaterThan(0.9);
+  });
+
   it("promotes code artifacts and docs at high confidence for the coding beta", () => {
     const codeEvent: RawEvent = {
       id: "event-4",

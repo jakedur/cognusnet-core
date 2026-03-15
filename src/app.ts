@@ -60,6 +60,7 @@ const writeSchema = z.object({
   artifactType: z.enum([
     "conversation",
     "prompt_response",
+    "coding_intent",
     "tool_output",
     "code_snippet",
     "code_diff",
@@ -71,6 +72,7 @@ const writeSchema = z.object({
     sourceKind: z.enum([
       "conversation",
       "prompt_response",
+      "coding_intent",
       "tool_output",
       "code_snippet",
       "code_diff",

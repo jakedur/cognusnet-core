@@ -144,4 +144,78 @@ describe("write -> retrieve flow", () => {
     expect(retrieve.json().trace.selectedMatches[0].pathMatch).toBe("exact");
     expect(retrieve.json().trace.selectedMatches[1].pathMatch).toBe("ancestor");
   });
+
+  it("retrieves coding intent rationale across different file paths in the same repository", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const intentWrite = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/origin.py" },
+        artifactType: "coding_intent",
+        artifactPayload: {
+          task: "Print ahhh",
+          rationale: "because the sky is blue",
+          constraints: ["single print statement", "omit rationale from code"]
+        },
+        provenance: {
+          sourceKind: "coding_intent",
+          sourceLabel: "Coding intent",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        },
+        idempotencyKey: "intent-flow-1"
+      }
+    });
+
+    const outcomeWrite = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/origin.py" },
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query: "Make a python script that prints ahhh.",
+          answer: "print('ahhh')"
+        },
+        provenance: {
+          sourceKind: "prompt_response",
+          sourceLabel: "Coding session",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        },
+        idempotencyKey: "intent-flow-2"
+      }
+    });
+
+    const retrieve = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/retrieve",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/other/context.py" },
+        query: "Why was the print ahhh?",
+        interactionMode: "coding"
+      }
+    });
+
+    const body = retrieve.json();
+    expect(intentWrite.json().acceptedCount).toBe(1);
+    expect(outcomeWrite.json().acceptedCount).toBe(1);
+    expect(body.contextBlock).toContain("because the sky is blue");
+    expect(body.contextBlock).toContain("single print statement");
+    expect(body.memoryRecords[0].memory.type).toBe("operational_note");
+    expect(body.memoryRecords[0].memory.attributes.originPath).toBe("scripts/origin.py");
+    expect(body.trace.selectedMatches[0].pathMatch).toBe("repository");
+  });
 });

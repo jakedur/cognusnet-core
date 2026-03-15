@@ -83,7 +83,7 @@ describe("CognusNetClient", () => {
     expect(decision.promotedMemoryId).toBe("memory-1");
   });
 
-  it("supports coding prepare and coding outcome helpers", async () => {
+  it("supports coding prepare, intent, and outcome helpers", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce({
@@ -93,6 +93,10 @@ describe("CognusNetClient", () => {
           contextBlock: "No prior memory found.",
           trace: { candidateCount: 0, selectedCount: 0, queryEmbeddingDimensions: 12, selectedMatches: [] }
         })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ eventId: "event-intent-1", extractionStatus: "processed", acceptedCount: 1, queuedCount: 0 })
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -110,6 +114,18 @@ describe("CognusNetClient", () => {
       actorId: "actor-1",
       scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
       query: "Where is the auth middleware?"
+    });
+    await client.recordCodingIntent({
+      tenantId: "tenant-alpha",
+      actorId: "actor-1",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "scripts/demo.py" },
+      artifact: {
+        artifactType: "coding_intent",
+        task: "Print ahhh",
+        rationale: "because the sky is blue",
+        constraints: ["single print statement"]
+      },
+      idempotencyKey: "coding-intent-1"
     });
     await client.recordCodingOutcome({
       tenantId: "tenant-alpha",
@@ -133,11 +149,32 @@ describe("CognusNetClient", () => {
         })
       })
     );
-    const secondRequest = fetchImpl.mock.calls[1]?.[1];
-    expect(secondRequest).toBeDefined();
-    const parsedBody = JSON.parse((secondRequest as { body: string }).body);
-    expect(parsedBody.scopes.path).toBe("src/api/server.ts");
-    expect(parsedBody.artifactPayload).toEqual({
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:3000/v1/memory/write",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-api-key": "test-api-key"
+        })
+      })
+    );
+    const intentRequest = fetchImpl.mock.calls[1]?.[1];
+    expect(intentRequest).toBeDefined();
+    const parsedIntentBody = JSON.parse((intentRequest as { body: string }).body);
+    expect(parsedIntentBody.scopes.path).toBe("scripts/demo.py");
+    expect(parsedIntentBody.artifactType).toBe("coding_intent");
+    expect(parsedIntentBody.artifactPayload).toEqual({
+      task: "Print ahhh",
+      rationale: "because the sky is blue",
+      constraints: ["single print statement"]
+    });
+
+    const outcomeRequest = fetchImpl.mock.calls[2]?.[1];
+    expect(outcomeRequest).toBeDefined();
+    const parsedOutcomeBody = JSON.parse((outcomeRequest as { body: string }).body);
+    expect(parsedOutcomeBody.scopes.path).toBe("src/api/server.ts");
+    expect(parsedOutcomeBody.artifactPayload).toEqual({
       query: "Where is the auth middleware?",
       answer: "It lives in src/api/server.ts."
     });

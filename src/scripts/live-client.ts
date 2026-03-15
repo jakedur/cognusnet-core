@@ -12,7 +12,16 @@ interface LiveClientConfig {
 }
 
 interface ParsedCommand {
-  command: "write" | "retrieve" | "feedback" | "ask" | "prepare_coding_context" | "record_coding_outcome" | "help";
+  command:
+    | "write"
+    | "retrieve"
+    | "feedback"
+    | "ask"
+    | "prepare_coding_context"
+    | "record_coding_intent"
+    | "record_coding_outcome"
+    | "smoke_intent_roundtrip"
+    | "help";
   flags: Record<string, string>;
   values: string[];
 }
@@ -50,7 +59,9 @@ function parseArgs(argv: string[]): ParsedCommand {
     rawCommand === "feedback" ||
     rawCommand === "ask" ||
     rawCommand === "prepare_coding_context" ||
-    rawCommand === "record_coding_outcome"
+    rawCommand === "record_coding_intent" ||
+    rawCommand === "record_coding_outcome" ||
+    rawCommand === "smoke_intent_roundtrip"
   ) {
     return { command: rawCommand, flags, values };
   }
@@ -82,13 +93,16 @@ function usage(): string {
     "  npm run client -- feedback --memory-id <id> --action pin",
     "  npm run client -- ask --query \"Where is the auth middleware?\" --answer \"It lives in api/server.ts\"",
     "  npm run client -- prepare_coding_context --query \"Where is the auth middleware?\" --path src/api/server.ts",
+    "  npm run client -- record_coding_intent --task \"Print ahhh\" --rationale \"because the sky is blue\" --constraints \"single print statement\" --path scripts/demo.py",
     "  npm run client -- record_coding_outcome --type prompt_response --query \"Where is the auth middleware?\" --answer \"It lives in src/api/server.ts.\" --path src/api/server.ts",
+    "  npm run client -- smoke_intent_roundtrip",
     "",
     "Optional flags:",
     "  --workspace-id <id>",
     "  --project-id <id>",
     "  --repository-id <id>",
-    "  --path <repository-relative-path>"
+    "  --path <repository-relative-path>",
+    "  --constraints <semi-colon delimited list>"
   ].join("\n");
 }
 
@@ -100,6 +114,18 @@ function resolveScopes(config: LiveClientConfig, flags: Record<string, string>):
     path: flags.path ?? undefined,
     userPrivateId: flags["user-private-id"] ?? undefined
   };
+}
+
+function parseConstraints(raw: string | undefined): string[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = raw
+    .split(";")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return parsed.length > 0 ? parsed : undefined;
 }
 
 export async function runLiveClient(
@@ -148,6 +174,28 @@ export async function runLiveClient(
       actorId: config.actorId,
       scopes,
       query
+    });
+
+    return JSON.stringify(response, null, 2);
+  }
+
+  if (parsed.command === "record_coding_intent") {
+    const task = parsed.flags.task ?? parsed.values.join(" ");
+    if (!task) {
+      throw new Error("record_coding_intent requires --task");
+    }
+
+    const response = await client.recordCodingIntent({
+      tenantId: config.tenantId,
+      actorId: config.actorId,
+      scopes,
+      artifact: {
+        artifactType: "coding_intent",
+        task,
+        rationale: parsed.flags.rationale,
+        constraints: parseConstraints(parsed.flags.constraints)
+      },
+      idempotencyKey: parsed.flags["idempotency-key"] ?? `live-client-intent-${randomUUID()}`
     });
 
     return JSON.stringify(response, null, 2);
@@ -225,6 +273,60 @@ export async function runLiveClient(
           });
 
     return JSON.stringify(response, null, 2);
+  }
+
+  if (parsed.command === "smoke_intent_roundtrip") {
+    const intentPath = parsed.flags["intent-path"] ?? "scripts/intent-source.py";
+    const retrievalPath = parsed.flags["retrieve-path"] ?? "src/other/context.py";
+    const task = parsed.flags.task ?? "Print ahhh";
+    const rationale = parsed.flags.rationale ?? "because the sky is blue";
+    const constraints = parseConstraints(parsed.flags.constraints) ?? ["single print statement", "omit rationale from code"];
+
+    const intent = await client.recordCodingIntent({
+      tenantId: config.tenantId,
+      actorId: config.actorId,
+      scopes: { ...scopes, path: intentPath },
+      artifact: {
+        artifactType: "coding_intent",
+        task,
+        rationale,
+        constraints
+      },
+      idempotencyKey: parsed.flags["intent-idempotency-key"] ?? `live-client-smoke-intent-${randomUUID()}`
+    });
+
+    const outcome = await client.recordCodingOutcome({
+      tenantId: config.tenantId,
+      actorId: config.actorId,
+      scopes: { ...scopes, path: intentPath },
+      artifact: {
+        artifactType: "prompt_response",
+        query: "Make a python script that prints ahhh.",
+        answer: "print('ahhh')"
+      },
+      idempotencyKey: parsed.flags["outcome-idempotency-key"] ?? `live-client-smoke-outcome-${randomUUID()}`
+    });
+
+    const retrieval = await client.prepareCodingContext({
+      tenantId: config.tenantId,
+      actorId: config.actorId,
+      scopes: { ...scopes, path: retrievalPath },
+      query: parsed.flags.query ?? "Why was the print ahhh?"
+    });
+
+    return JSON.stringify(
+      {
+        intent,
+        outcome,
+        retrieval,
+        assertions: {
+          contextIncludesRationale: retrieval.contextBlock.includes(rationale),
+          selectedMemoryCount: retrieval.trace.selectedCount
+        }
+      },
+      null,
+      2
+    );
   }
 
   const query = parsed.flags.query;

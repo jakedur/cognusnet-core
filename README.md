@@ -85,7 +85,7 @@ The full two-repo setup, including `cognusnet`, is documented in the `cognusnet`
 
 Use the reference client against the running local service:
 
-```powershell
+```sh
 npm run client -- retrieve --query "Where is the auth middleware?"
 npm run client -- write --type conversation --text "Decision: auth middleware lives in api/server.ts"
 npm run client -- ask --query "Where is the auth middleware?" --answer "It lives in api/server.ts"
@@ -112,6 +112,8 @@ This repo also includes a local stdio MCP server for coding memory so Codex can 
 1. Start the core API with `npm run dev`.
 2. In another shell, make sure these environment variables are available:
 
+Windows PowerShell:
+
 ```powershell
 $env:COGNUSNET_BASE_URL="http://127.0.0.1:3000"
 $env:COGNUSNET_API_KEY="test-api-key"
@@ -122,9 +124,21 @@ $env:COGNUSNET_PROJECT_ID="project-1"
 $env:COGNUSNET_REPOSITORY_ID="repository-1"
 ```
 
+macOS/Linux:
+
+```sh
+export COGNUSNET_BASE_URL="http://127.0.0.1:3000"
+export COGNUSNET_API_KEY="test-api-key"
+export COGNUSNET_TENANT_ID="tenant-alpha"
+export COGNUSNET_ACTOR_ID="actor-1"
+export COGNUSNET_WORKSPACE_ID="workspace-1"
+export COGNUSNET_PROJECT_ID="project-1"
+export COGNUSNET_REPOSITORY_ID="repository-1"
+```
+
 3. Run the MCP server:
 
-```powershell
+```sh
 npm run mcp
 ```
 
@@ -145,17 +159,17 @@ For coding retrieval, the core now prefers narrower path matches and higher-sign
 
 You can verify the end-to-end failure case that motivated this beta with:
 
-```powershell
+```sh
 npm run client -- smoke_intent_roundtrip
 ```
 
-That command records intent for “print `ahhh` because the sky is blue,” writes a code-only outcome, retrieves from another file path, and reports whether the rationale was returned in the retrieved context.
+That command records intent for "print `ahhh` because the sky is blue," writes a code-only outcome, retrieves from another file path, and reports whether the rationale was returned in the retrieved context.
 
 ## MCP Diagnostics
 
 To verify that a separate Codex environment is actually reaching the MCP server and the core API, run:
 
-```powershell
+```sh
 npm run verify:mcp
 ```
 
@@ -168,8 +182,16 @@ That script:
 
 You can also persist MCP diagnostics from normal Codex use by setting:
 
+Windows PowerShell:
+
 ```powershell
 $env:COGNUSNET_MCP_LOG_PATH="C:\path\to\cognusnet-mcp.log"
+```
+
+macOS/Linux:
+
+```sh
+export COGNUSNET_MCP_LOG_PATH="/path/to/cognusnet-mcp.log"
 ```
 
 The MCP server writes JSON lines to stderr and, when `COGNUSNET_MCP_LOG_PATH` is set, also appends them to that file. The most useful events are:
@@ -183,14 +205,20 @@ The MCP server writes JSON lines to stderr and, when `COGNUSNET_MCP_LOG_PATH` is
 
 If another environment still fails, the presence or absence of these events tells you whether the problem is configuration, tool invocation, write failure, or retrieval miss.
 
-For Codex desktop, add this to `C:\Users\jaked\.codex\config.toml`:
+For Codex desktop, add this to your Codex config file:
+
+- Windows: `%USERPROFILE%\.codex\config.toml`
+- macOS: `~/.codex/config.toml`
+- Linux: `~/.codex/config.toml`
 
 ```toml
 [mcp_servers.cognusnet]
 command = "node"
 args = ["./node_modules/tsx/dist/cli.mjs", "src/scripts/mcp-server.ts"]
-cwd = "C:\\Users\\jaked\\git\\cognusnet-core"
+cwd = "/absolute/path/to/cognusnet-core"
 env = { COGNUSNET_BASE_URL = "http://127.0.0.1:3000", COGNUSNET_API_KEY = "test-api-key", COGNUSNET_TENANT_ID = "tenant-alpha", COGNUSNET_ACTOR_ID = "actor-1", COGNUSNET_WORKSPACE_ID = "workspace-1", COGNUSNET_PROJECT_ID = "project-1", COGNUSNET_REPOSITORY_ID = "repository-1" }
 ```
+
+On Windows, set `cwd` to a Windows path such as `C:\\Users\\<you>\\git\\cognusnet-core`. On macOS and Linux, use your normal absolute clone path.
 
 The MCP process must not write non-protocol output to stdout. This server only writes startup and failure messages to stderr so it is safe to launch from Codex.

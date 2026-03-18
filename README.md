@@ -221,4 +221,48 @@ env = { COGNUSNET_BASE_URL = "http://127.0.0.1:3000", COGNUSNET_API_KEY = "test-
 
 On Windows, set `cwd` to a Windows path such as `C:\\Users\\<you>\\git\\cognusnet-core`. On macOS and Linux, use your normal absolute clone path.
 
+## Cursor
+
+Cursor can use the same MCP server through `mcp.json`.
+
+Configuration locations:
+
+- project-specific: `.cursor/mcp.json`
+- global: `~/.cursor/mcp.json`
+
+Example project config:
+
+```json
+{
+  "mcpServers": {
+    "cognusnet": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./node_modules/tsx/dist/cli.mjs", "src/scripts/mcp-server.ts"],
+      "cwd": "/absolute/path/to/cognusnet-core",
+      "env": {
+        "COGNUSNET_BASE_URL": "http://127.0.0.1:3000",
+        "COGNUSNET_API_KEY": "test-api-key",
+        "COGNUSNET_TENANT_ID": "tenant-alpha",
+        "COGNUSNET_ACTOR_ID": "actor-1",
+        "COGNUSNET_WORKSPACE_ID": "workspace-1",
+        "COGNUSNET_PROJECT_ID": "project-1",
+        "COGNUSNET_REPOSITORY_ID": "repository-1"
+      }
+    }
+  }
+}
+```
+
+Platform notes:
+
+- Windows `cwd` example: `C:\\Users\\<you>\\git\\cognusnet-core`
+- macOS `cwd` example: `/Users/<you>/git/cognusnet-core`
+- Linux `cwd` example: `/home/<you>/git/cognusnet-core`
+- if `node` is not on Cursor's PATH, use the full Node executable path instead
+
+I matched this section to Cursor's current MCP docs for `mcp.json` and configuration locations:
+
+- [Cursor MCP docs](https://docs.cursor.com/en/context/mcp)
+
 The MCP process must not write non-protocol output to stdout. This server only writes startup and failure messages to stderr so it is safe to launch from Codex.

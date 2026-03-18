@@ -105,4 +105,75 @@ describe("rankMemories", () => {
 
     expect(ranked.map((entry) => entry.memory.id)).toEqual([exact.id, parent.id, repository.id]);
   });
+
+  it("prefers exact-path facts over broader same-query memories even when both lexical matches are strong", async () => {
+    const embeddings = new DeterministicEmbeddingProvider();
+    const request: RetrieveMemoryRequest = {
+      tenantId: "tenant-alpha",
+      actorId: "actor-1",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      query: "Which file actually contains the auth middleware for the API server entrypoint?",
+      interactionMode: "coding"
+    };
+
+    const repository = await buildMemory({
+      title: "Coding fact (auth middleware)",
+      content: "The auth middleware lives in src/api/index.ts at the repository level.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+      confidence: 0.84,
+      attributes: { mergeKey: "coding_answer:which_file_contains_auth" }
+    });
+    const exact = await buildMemory({
+      title: "Coding fact (auth middleware)",
+      content: "The auth middleware lives in src/api/server.ts.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      confidence: 0.84,
+      attributes: { mergeKey: "coding_answer:which_file_contains_auth" }
+    });
+
+    const ranked = rankMemories({
+      request,
+      queryEmbedding: await embeddings.embed(request.query),
+      candidates: [repository, exact],
+      scopeResolver: new ScopeResolver()
+    });
+
+    expect(ranked[0]?.memory.id).toBe(exact.id);
+    expect(ranked[1]?.memory.id).toBe(repository.id);
+  });
+
+  it("down-ranks conversation summaries for coding retrieval by default", async () => {
+    const embeddings = new DeterministicEmbeddingProvider();
+    const request: RetrieveMemoryRequest = {
+      tenantId: "tenant-alpha",
+      actorId: "actor-1",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      query: "Where is the auth middleware?",
+      interactionMode: "coding"
+    };
+
+    const summary = await buildMemory({
+      type: "conversation_summary",
+      title: "Interaction summary",
+      content: "We talked about auth middleware and next steps.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+      confidence: 0.9
+    });
+    const fact = await buildMemory({
+      type: "fact",
+      title: "Auth middleware location",
+      content: "The auth middleware lives in src/api/server.ts.",
+      scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+      confidence: 0.82
+    });
+
+    const ranked = rankMemories({
+      request,
+      queryEmbedding: await embeddings.embed(request.query),
+      candidates: [summary, fact],
+      scopeResolver: new ScopeResolver()
+    });
+
+    expect(ranked[0]?.memory.id).toBe(fact.id);
+  });
 });

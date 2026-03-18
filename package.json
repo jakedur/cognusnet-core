@@ -19,6 +19,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "client": "tsx src/scripts/live-client.ts",
+    "db:create": "tsx src/scripts/db.ts create",
+    "db:migrate": "tsx src/scripts/db.ts migrate",
+    "db:setup": "tsx src/scripts/db.ts setup",
     "dev": "tsx watch src/index.ts",
     "mcp": "tsx src/scripts/mcp-server.ts",
     "verify:mcp": "tsx src/scripts/verify-mcp.ts",

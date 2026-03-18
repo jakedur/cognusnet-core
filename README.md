@@ -27,44 +27,59 @@ This repository contains the open source TypeScript v1 scaffold for CognusNet co
 
 ## Local Setup
 
-1. Install Node.js 20+
-2. Copy `.env.example` to `.env`
-3. Start Postgres with `docker compose up -d`
-4. Install dependencies with `npm install`
-5. Apply the SQL in `src/infra/postgres/migrations/`
-6. Seed the local tenant with `npm run seed`
-7. Run tests with `npm test`
-8. Start the service with `npm run dev`
+Quickstart:
+
+1. Start Postgres:
+
+```sh
+docker compose up -d
+```
+
+2. Copy `.env.example` to `.env`.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS/Linux:
+
+```sh
+cp .env.example .env
+```
+
+3. Install dependencies, create the database if needed, apply migrations, and seed the local tenant:
+
+```sh
+npm install
+npm run db:setup
+npm run seed
+```
+
+4. Start the service:
+
+```sh
+npm run dev
+```
+
+5. Validate the repo:
+
+```sh
+npm test
+npm run typecheck
+npm run build
+```
 
 The schema step is required before seeding. `npm run seed` inserts into tables like `tenants`, so it will fail with `relation "tenants" does not exist` if you skip the migration.
 
-From the repo root, the simplest schema apply command is:
+Cross-platform database commands:
 
-```powershell
-Get-ChildItem src\infra\postgres\migrations\*.sql | Sort-Object Name | ForEach-Object {
-  Get-Content $_.FullName -Raw | docker exec -i cognusnet-core-postgres-1 psql -U postgres -d cognusnet
-}
-```
+- `npm run db:create`: create the repo's default database if it does not exist
+- `npm run db:migrate`: apply all SQL migrations
+- `npm run db:setup`: create the database if needed, then apply any new migrations
 
-If your container name differs, check it with:
-
-```powershell
-docker ps
-```
-
-If you already have `psql` installed locally, you can apply the schema without `docker exec`:
-
-```powershell
-Get-ChildItem src\infra\postgres\migrations\*.sql | Sort-Object Name | ForEach-Object {
-  Get-Content $_.FullName -Raw | psql "postgres://postgres:postgres@localhost:5432/cognusnet"
-}
-```
-
-Then seed the local records:
-
-```powershell
-npm run seed
-```
+The full two-repo setup, including `cognusnet`, is documented in the `cognusnet` repo at `docs/local-dev.md`.
 
 ## Live Client
 

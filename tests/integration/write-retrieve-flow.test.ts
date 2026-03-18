@@ -283,4 +283,72 @@ describe("write -> retrieve flow", () => {
     expect(body.contextBlock).toContain("Path match: exact");
     expect(body.contextBlock).not.toContain("Interaction summary");
   });
+
+  it("keeps the newest same-query coding memory when merge-key dedupe applies", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const query = "Which file actually contains the auth middleware for the API server entrypoint?";
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query,
+          answer: "The auth middleware lives in src/api/index.ts."
+        },
+        provenance: {
+          sourceKind: "prompt_response",
+          sourceLabel: "Older coding session",
+          actorId: testContext.actorId,
+          capturedAt: "2026-03-18T00:00:00.000Z"
+        }
+      }
+    });
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query,
+          answer: "The auth middleware lives in src/api/server.ts."
+        },
+        provenance: {
+          sourceKind: "prompt_response",
+          sourceLabel: "Newer coding session",
+          actorId: testContext.actorId,
+          capturedAt: "2026-03-18T00:05:00.000Z"
+        }
+      }
+    });
+
+    const retrieve = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/retrieve",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        query,
+        interactionMode: "coding"
+      }
+    });
+
+    const body = retrieve.json();
+    expect(body.memoryRecords).toHaveLength(1);
+    expect(body.memoryRecords[0].memory.content).toContain("src/api/server.ts");
+  });
 });

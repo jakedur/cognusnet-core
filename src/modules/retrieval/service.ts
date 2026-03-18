@@ -49,7 +49,7 @@ export class RetrievalService {
       queryEmbedding,
       candidates: filtered,
       scopeResolver: this.scopeResolver
-    })).slice(0, 8);
+    }), normalizedRequest).slice(0, 8);
 
     await this.audits.record({
       tenantId: normalizedRequest.tenantId,
@@ -96,9 +96,32 @@ function defaultMemoryTypes(
   return ["fact", "decision", "code_pattern", "document_summary", "operational_note"];
 }
 
-function dedupeRankedMemories(items: RetrievedMemory[]): RetrievedMemory[] {
+function dedupeRankedMemories(
+  items: RetrievedMemory[],
+  request: RetrieveMemoryRequest
+): RetrievedMemory[] {
+  if (request.interactionMode !== "coding") {
+    return items;
+  }
+
   const seenMergeKeys = new Set<string>();
   const deduped: RetrievedMemory[] = [];
+  const latestByMergeKey = new Map<string, RetrievedMemory>();
+
+  for (const item of items) {
+    const mergeKey = typeof item.memory.attributes.mergeKey === "string"
+      ? item.memory.attributes.mergeKey
+      : undefined;
+
+    if (!mergeKey) {
+      continue;
+    }
+
+    const existing = latestByMergeKey.get(mergeKey);
+    if (!existing || isNewerMemory(item, existing)) {
+      latestByMergeKey.set(mergeKey, item);
+    }
+  }
 
   for (const item of items) {
     const mergeKey = typeof item.memory.attributes.mergeKey === "string"
@@ -106,6 +129,9 @@ function dedupeRankedMemories(items: RetrievedMemory[]): RetrievedMemory[] {
       : undefined;
 
     if (mergeKey) {
+      if (latestByMergeKey.get(mergeKey)?.memory.id !== item.memory.id) {
+        continue;
+      }
       if (seenMergeKeys.has(mergeKey)) {
         continue;
       }
@@ -116,6 +142,37 @@ function dedupeRankedMemories(items: RetrievedMemory[]): RetrievedMemory[] {
   }
 
   return deduped;
+}
+
+function isNewerMemory(left: RetrievedMemory, right: RetrievedMemory): boolean {
+  const leftCapturedAt = latestCapturedAtMs(left);
+  const rightCapturedAt = latestCapturedAtMs(right);
+
+  if (Number.isFinite(leftCapturedAt) && Number.isFinite(rightCapturedAt) && leftCapturedAt !== rightCapturedAt) {
+    return leftCapturedAt > rightCapturedAt;
+  }
+
+  const leftUpdatedAt = Date.parse(left.memory.updatedAt);
+  const rightUpdatedAt = Date.parse(right.memory.updatedAt);
+
+  if (Number.isFinite(leftUpdatedAt) && Number.isFinite(rightUpdatedAt) && leftUpdatedAt !== rightUpdatedAt) {
+    return leftUpdatedAt > rightUpdatedAt;
+  }
+
+  return left.score > right.score;
+}
+
+function latestCapturedAtMs(item: RetrievedMemory): number {
+  let latest = Number.NaN;
+
+  for (const source of item.memory.sources) {
+    const capturedAt = Date.parse(source.capturedAt);
+    if (Number.isFinite(capturedAt) && (!Number.isFinite(latest) || capturedAt > latest)) {
+      latest = capturedAt;
+    }
+  }
+
+  return latest;
 }
 
 function formatContextItem(

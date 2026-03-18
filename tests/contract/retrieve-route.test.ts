@@ -160,4 +160,65 @@ describe("POST /v1/memory/retrieve", () => {
     expect(body.memoryRecords[0].memory.content).toContain("src/api/server.ts");
     expect(body.trace.selectedMatches[0].pathMatch).toBe("exact");
   });
+
+  it("does not apply merge-key dedupe outside coding retrieval", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    const commonPayload = {
+      tenantId: testContext.tenantId,
+      actorId: testContext.actorId,
+      artifactType: "prompt_response" as const,
+      provenance: {
+        sourceKind: "prompt_response" as const,
+        sourceLabel: "Support session",
+        actorId: testContext.actorId,
+        capturedAt: new Date().toISOString()
+      }
+    };
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        ...commonPayload,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+        artifactPayload: {
+          query: "How is auth configured?",
+          answer: "Repository-level auth is configured through src/api/server.ts."
+        }
+      }
+    });
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        ...commonPayload,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        artifactPayload: {
+          query: "How is auth configured?",
+          answer: "File-level auth is configured in src/api/server.ts."
+        }
+      }
+    });
+
+    const response = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/retrieve",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        query: "How is auth configured?",
+        interactionMode: "support"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().memoryRecords).toHaveLength(2);
+  });
 });

@@ -121,6 +121,13 @@ The coding MCP surface now includes:
 
 Use `record_coding_intent` whenever the user gives explicit rationale or constraints that might not appear in the final code. `coding_intent` writes are promoted to a repository-scoped `operational_note` so later retrieval from a different file path in the same repository can still recall the rationale.
 
+For coding retrieval, the core now prefers narrower path matches and higher-signal coding memories when multiple memories overlap:
+
+- exact file-path matches rank above ancestor and repository-scoped matches
+- same-query coding memories dedupe by merge key after ranking, so broader duplicates do not crowd the prompt context
+- low-signal `conversation_summary` memories are excluded from default coding retrieval unless the caller explicitly asks for them
+- the returned `contextBlock` is formatted as path-aware retrieved context instead of numbered `Memory 1`, `Memory 2` entries
+
 You can verify the end-to-end failure case that motivated this beta with:
 
 ```powershell

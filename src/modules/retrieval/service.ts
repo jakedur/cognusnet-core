@@ -1,4 +1,4 @@
-import type { AuthenticatedActor, RetrieveMemoryRequest, RetrieveMemoryResponse } from "../../domain/types";
+import type { AuthenticatedActor, RetrievedMemory, RetrieveMemoryRequest, RetrieveMemoryResponse } from "../../domain/types";
 import type { MemoryRepository } from "../../ports/repositories";
 import type { EmbeddingProvider } from "../embeddings/provider";
 import { AuditService } from "../audit/service";
@@ -16,9 +16,11 @@ export class RetrievalService {
   async retrieve(request: RetrieveMemoryRequest, actor: AuthenticatedActor): Promise<RetrieveMemoryResponse> {
     const normalizedScopes = this.scopeResolver.normalizeScope(request.scopes);
     this.scopeResolver.ensureScoped(normalizedScopes);
+    const memoryTypes = request.memoryTypes ?? defaultMemoryTypes(request.interactionMode);
     const normalizedRequest: RetrieveMemoryRequest = {
       ...request,
-      scopes: normalizedScopes
+      scopes: normalizedScopes,
+      memoryTypes
     };
     const queryEmbedding = await this.embeddings.embed(normalizedRequest.query);
     const tenantMemories = await this.memories.listByTenant(normalizedRequest.tenantId);
@@ -42,12 +44,12 @@ export class RetrievalService {
       return true;
     });
 
-    const ranked = rankMemories({
+    const ranked = dedupeRankedMemories(rankMemories({
       request: normalizedRequest,
       queryEmbedding,
       candidates: filtered,
       scopeResolver: this.scopeResolver
-    }).slice(0, 8);
+    })).slice(0, 8);
 
     await this.audits.record({
       tenantId: normalizedRequest.tenantId,
@@ -66,9 +68,7 @@ export class RetrievalService {
       memoryRecords: ranked,
       contextBlock: ranked.length
         ? ranked
-            .map((item, index) =>
-              [`Memory ${index + 1}: ${item.memory.title}`, `Type: ${item.memory.type}`, `Content: ${item.memory.content}`].join("\n")
-            )
+            .map((item) => formatContextItem(item, normalizedRequest, this.scopeResolver))
             .join("\n\n")
         : "No prior memory found.",
       trace: {
@@ -83,5 +83,69 @@ export class RetrievalService {
         }))
       }
     };
+  }
+}
+
+function defaultMemoryTypes(
+  interactionMode: RetrieveMemoryRequest["interactionMode"]
+): RetrieveMemoryRequest["memoryTypes"] | undefined {
+  if (interactionMode !== "coding") {
+    return undefined;
+  }
+
+  return ["fact", "decision", "code_pattern", "document_summary", "operational_note"];
+}
+
+function dedupeRankedMemories(items: RetrievedMemory[]): RetrievedMemory[] {
+  const seenMergeKeys = new Set<string>();
+  const deduped: RetrievedMemory[] = [];
+
+  for (const item of items) {
+    const mergeKey = typeof item.memory.attributes.mergeKey === "string"
+      ? item.memory.attributes.mergeKey
+      : undefined;
+
+    if (mergeKey) {
+      if (seenMergeKeys.has(mergeKey)) {
+        continue;
+      }
+      seenMergeKeys.add(mergeKey);
+    }
+
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
+function formatContextItem(
+  item: RetrievedMemory,
+  request: RetrieveMemoryRequest,
+  scopeResolver: ScopeResolver
+): string {
+  const pathMatch = scopeResolver.describePathMatch(request.scopes, item.memory.scopes);
+  const lines = [`Path match: ${pathMatch}`];
+
+  if (item.memory.scopes.path) {
+    lines.push(`${pathLabel(pathMatch)}: ${item.memory.scopes.path}`);
+  }
+
+  lines.push(`Type: ${item.memory.type}`);
+  lines.push(`Title: ${item.memory.title}`);
+  lines.push(`Content: ${item.memory.content}`);
+  return lines.join("\n");
+}
+
+function pathLabel(pathMatch: ReturnType<ScopeResolver["describePathMatch"]>): string {
+  switch (pathMatch) {
+    case "exact":
+      return "Exact path";
+    case "ancestor":
+      return "Ancestor path";
+    case "broader":
+      return "Broader path";
+    case "repository":
+    case "none":
+      return "Path";
   }
 }

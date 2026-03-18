@@ -218,4 +218,69 @@ describe("write -> retrieve flow", () => {
     expect(body.memoryRecords[0].memory.attributes.originPath).toBe("scripts/origin.py");
     expect(body.trace.selectedMatches[0].pathMatch).toBe("repository");
   });
+
+  it("filters low-signal conversation summaries from default coding retrieval", async () => {
+    const testContext = createTestContext();
+    app = testContext.app;
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1" },
+        artifactType: "conversation",
+        artifactPayload: "We talked about auth middleware and some repo cleanup ideas.",
+        provenance: {
+          sourceKind: "conversation",
+          sourceLabel: "Standup",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        }
+      }
+    });
+
+    await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/write",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        artifactType: "prompt_response",
+        artifactPayload: {
+          query: "Where is the auth middleware?",
+          answer: "The auth middleware lives in src/api/server.ts."
+        },
+        provenance: {
+          sourceKind: "prompt_response",
+          sourceLabel: "Coding session",
+          actorId: testContext.actorId,
+          capturedAt: new Date().toISOString()
+        }
+      }
+    });
+
+    const retrieve = await testContext.app.inject({
+      method: "POST",
+      url: "/v1/memory/retrieve",
+      headers: { "x-api-key": testContext.apiKey },
+      payload: {
+        tenantId: testContext.tenantId,
+        actorId: testContext.actorId,
+        scopes: { workspaceId: "w1", projectId: "p1", repositoryId: "r1", path: "src/api/server.ts" },
+        query: "Where is the auth middleware?",
+        interactionMode: "coding"
+      }
+    });
+
+    const body = retrieve.json();
+    expect(body.memoryRecords).toHaveLength(1);
+    expect(body.memoryRecords[0].memory.type).toBe("fact");
+    expect(body.contextBlock).toContain("Path match: exact");
+    expect(body.contextBlock).not.toContain("Interaction summary");
+  });
 });
